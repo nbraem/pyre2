@@ -20,21 +20,12 @@ class TestCommand(Command):
         re2_test.testall()
 
 
-def version_compare(version1, version2):
-    def normalize(v):
-        return [int(x) for x in re.sub(r'(\.0+)*$','', v).split(".")]
-    return cmp(normalize(version1), normalize(version2))
-
 cmdclass = {'test': TestCommand}
 
 ext_files = []
 if '--cython' in sys.argv[1:]:
     # Using Cython
     sys.argv.remove('--cython')
-    from Cython.Compiler.Main import Version
-    if version_compare(MINIMUM_CYTHON_VERSION, Version.version) > 0:
-        raise ValueError("Cython is version %s, but needs to be at least %s." %
-                         (Version.version, MINIMUM_CYTHON_VERSION))
     from Cython.Distutils import build_ext
     cmdclass['build_ext'] = build_ext
     ext_files.append("src/re2.pyx")

@@ -191,7 +191,7 @@ cdef class Match:
 
         self.init_groups()
 
-        if isinstance(groupnum, basestring):
+        if isinstance(groupnum, str):
             return self.groupdict()[groupnum]
 
         idx = groupnum
@@ -199,14 +199,14 @@ cdef class Match:
         if idx > self.nmatches - 1:
             raise IndexError("no such group")
         return self._groups[idx]
-    
+
     cdef object _convert_positions(self, positions):
         cdef char * s = self.match_string
         cdef int cpos = 0
         cdef int upos = 0
         cdef int size = len(self.match_string)
-        cdef int c 
-        
+        cdef int c
+
         new_positions = []
         i = 0
         num_positions = len(positions)
@@ -253,7 +253,7 @@ cdef class Match:
         posdict = dict(zip(positions, self._convert_positions(positions)))
 
         return [(posdict[x], posdict[y]) for x,y in spans]
-        
+
 
     cdef _make_spans(self):
         if self._spans is not None:
@@ -274,7 +274,7 @@ cdef class Match:
                 start = piece.data() - s
                 end = start + piece.length()
                 spans.append((start, end))
-        
+
         if self.encoded:
             spans = self._convert_spans(spans)
 
@@ -361,13 +361,13 @@ cdef class Match:
 
             if self._lastindex < 1:
                 return None
-            
+
             it = self.named_groups.begin()
             while it != self.named_groups.end():
                 if deref(it).second == self._lastindex:
                     return cpp_to_pystring(deref(it).first)
                 inc(it)
-            
+
             return None
 
 
@@ -655,7 +655,7 @@ cdef class Pattern:
                     if fixed_repl == NULL:
                         fixed_repl = new _re2.cpp_string(cstring, s - cstring - 1)
                     if c == 'n':
-                        fixed_repl.push_back('\n')   
+                        fixed_repl.push_back('\n')
                     else:
                         fixed_repl.push_back('\\')
                         fixed_repl.push_back('\\')
@@ -853,14 +853,14 @@ def prepare_pattern(pattern, int flags):
                         elif this[1] == 'D':
                             new_pattern.append(r'\P{Nd}')
                         elif this[1] == 'W':
-                            # Since \w and \s are made out of several character groups, 
+                            # Since \w and \s are made out of several character groups,
                             # I don't see a way to convert their complements into a group
                             # without rewriting the whole expression, which seems too complicated.
 
                             raise CharClassProblemException()
                         elif this[1] == 'S':
                             raise CharClassProblemException()
-                        else:   
+                        else:
                             new_pattern.append(this)
                     else:
                         new_pattern.append(this)
@@ -899,7 +899,7 @@ def prepare_pattern(pattern, int flags):
 
     return ''.join(new_pattern)
 
-    
+
 
 def _compile(pattern, int flags=0, int max_mem=8388608):
     """
@@ -936,7 +936,7 @@ def _compile(pattern, int flags=0, int max_mem=8388608):
         elif current_notification == <int>FALLBACK_WARNING:
             warnings.warn("WARNING: Using re module. Reason: %s" % error_msg)
         return re.compile(original_pattern, flags)
-        
+
     # Set the options given the flags above.
     if flags & _I:
         opts.set_case_sensitive(0);
@@ -966,7 +966,7 @@ def _compile(pattern, int flags=0, int max_mem=8388608):
             raise RegexError(error_msg)
         elif error_code not in (_re2.ErrorBadPerlOp, _re2.ErrorRepeatSize,
                                 _re2.ErrorBadEscape):
-            # Raise an error because these will not be fixed by using the 
+            # Raise an error because these will not be fixed by using the
             # ``re`` module.
             raise RegexError(error_msg)
         elif current_notification == <int>FALLBACK_WARNING:
