@@ -16,6 +16,8 @@ find at `facebook's github repository <http://github.com/facebook/pyre2/>`_
 except that the stated goal of this version is to be a *drop-in replacement* for
 the ``re`` module.
 
+git subtree add --prefix re2/src/re2 git@github.com:google/re2.git master --squash
+
 Backwards Compatibility
 =======================
 

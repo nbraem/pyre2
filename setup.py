@@ -4,7 +4,50 @@ import os
 import re
 from distutils.core import setup, Extension, Command
 
-MINIMUM_CYTHON_VERSION = '0.13'
+DESCRIPTION = "Python wrapper for Google's RE2 using Cython"
+
+DISTNAME = 're2'
+LICENSE = 'New BSD License'
+EMAIL = "nick.conway@wyss.harvard.edu"
+URL = ""
+DOWNLOAD_URL = ''
+CLASSIFIERS = [
+    'Development Status :: 1 - Beta',
+    'Environment :: Console',
+    'Programming Language :: Python',
+    'Programming Language :: Python :: 2',
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 2.7',
+    'Programming Language :: Python :: 3.3',
+    'Programming Language :: Python :: 3.4',
+    'Programming Language :: Cython',
+    'License :: OSI Approved :: BSD License',
+    'Intended Audience :: Developers',
+    'Topic :: Software Development :: Libraries :: Python Modules',
+]
+
+from distutils.core import setup, Extension
+# from Cython.Distutils import Extension
+from Cython.Build import cythonize
+import os
+from os.path import join as pjoin
+import sys
+import shutil
+
+PACKAGE_PATH =          os.path.abspath(os.path.dirname(__file__))
+MODULE_PATH =           pjoin(PACKAGE_PATH, 're2')
+
+def get_long_description():
+    with open(pjoin(PACKAGE_PATH, "README.rst")) as readme_f:
+        readme = readme_f.read()
+    return readme
+
+def get_authors():
+    author_re = re.compile(r'^\s*(.*?)\s+<.*?\@.*?>', re.M)
+    with open(pjoin(PACKAGE_PATH, "AUTHORS")) as authors_f:
+        authors = [match.group(1) for match in author_re.finditer(authors_f.read())]
+    return ', '.join(authors)
+
 
 class TestCommand(Command):
     description = 'Run packaged tests'
@@ -22,18 +65,6 @@ class TestCommand(Command):
 
 cmdclass = {'test': TestCommand}
 
-ext_files = []
-if '--cython' in sys.argv[1:]:
-    # Using Cython
-    sys.argv.remove('--cython')
-    from Cython.Distutils import build_ext
-    cmdclass['build_ext'] = build_ext
-    ext_files.append("src/re2.pyx")
-else:
-    # Building from C
-    ext_files.append("src/re2.cpp")
-
-
 # Locate the re2 module
 _re2_prefixes = [
     '/usr',
@@ -47,52 +78,28 @@ for re2_prefix in _re2_prefixes:
 else:
     re2_prefix = ""
 
-BASE_DIR = os.path.dirname(__file__)
+re2_ext = Extension( "re2",
+        sources=['re2/re2.pyx'],
+        language="c++",
+        include_dirs=[os.path.join(re2_prefix, "include")] if re2_prefix else [],
+        libraries=["re2"],
+        library_dirs=[os.path.join(re2_prefix, "lib")] if re2_prefix else [],
+        runtime_library_dirs=[os.path.join(re2_prefix, "lib")] if re2_prefix else [],
+    )
 
-def get_long_description():
-    readme_f = open(os.path.join(BASE_DIR, "README.rst"))
-    readme = readme_f.read()
-    readme_f.close()
-    return readme
+cython_ext_list = cythonize(re2_ext)
 
-def get_authors():
-    author_re = re.compile(r'^\s*(.*?)\s+<.*?\@.*?>', re.M)
-    authors_f = open(os.path.join(BASE_DIR, "AUTHORS"))
-    authors = [match.group(1) for match in author_re.finditer(authors_f.read())]
-    authors_f.close()
-    return ', '.join(authors)
+setup(
+    name="re2",
+    version="0.2.20",
+    description=DESCRIPTION,
+    long_description=get_long_description(),
+    author=get_authors(),
+    license=LICENSE,
+    author_email = EMAIL,
+    url = "http://github.com/Wyss/pyre2/",
+    ext_modules = cython_ext_list,
+    cmdclass=cmdclass,
+    classifiers = CLASSIFIERS
+)
 
-def main():
-    setup(
-        name="re2",
-        version="0.2.20",
-        description="Python wrapper for Google's RE2 using Cython",
-        long_description=get_long_description(),
-        author=get_authors(),
-        license="New BSD License",
-        author_email = "mike@axiak.net",
-        url = "http://github.com/axiak/pyre2/",
-        ext_modules = [
-            Extension(
-                "re2",
-                ext_files,
-                language="c++",
-                include_dirs=[os.path.join(re2_prefix, "include")] if re2_prefix else [],
-                libraries=["re2"],
-                library_dirs=[os.path.join(re2_prefix, "lib")] if re2_prefix else [],
-                runtime_library_dirs=[os.path.join(re2_prefix, "lib")] if re2_prefix else [],
-            )
-        ],
-        cmdclass=cmdclass,
-        classifiers = [
-            'License :: OSI Approved :: BSD License',
-            'Programming Language :: Cython',
-            'Programming Language :: Python :: 2.5',
-            'Programming Language :: Python :: 2.6',
-            'Intended Audience :: Developers',
-            'Topic :: Software Development :: Libraries :: Python Modules',
-            ],
-        )
-
-if __name__ == '__main__':
-    main()

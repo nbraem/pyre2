@@ -1,3 +1,5 @@
+# TODO: bring up to current cython spec for const and c++ strings
+# see https://github.com/cython/cython/wiki/FAQ#id35
 cdef extern from *:
     ctypedef char* const_char_ptr "const char*"
 
