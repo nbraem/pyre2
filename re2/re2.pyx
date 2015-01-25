@@ -3,6 +3,9 @@
 import sys
 import re
 
+from libcpp.string cimport string as cpp_string
+from libcpp.map cimport map as cpp_map
+
 I = re.I
 IGNORECASE = re.IGNORECASE
 M = re.M
@@ -57,21 +60,22 @@ cimport cpython.unicode
 from cython.operator cimport preincrement as inc, dereference as deref
 import warnings
 
-cdef object cpp_to_pystring(_re2.cpp_string input):
+cdef object cpp_to_pystring(cpp_string input_str):
     # This function is a quick converter from a std::string object
     # to a python string. By taking the slice we go to the right size,
     # despite spurious or missing null characters.
-    return input.c_str()[:input.length()]
+    return input_str.c_str()[:input_str.length()]
 
-cdef inline object cpp_to_utf8(_re2.cpp_string input):
+cdef inline object cpp_to_utf8(cpp_string input_str):
     # This function converts a std::string object to a utf8 object.
-    return cpython.unicode.PyUnicode_DecodeUTF8(input.c_str(), input.length(), 'strict')
+    return cpython.unicode.PyUnicode_DecodeUTF8(input_str.c_str(), 
+                                                input_str.length(), 'strict')
 
-cdef inline object char_to_utf8(_re2.const_char_ptr input, int length):
+cdef inline object char_to_utf8(const char* input_str, int length):
     # This function converts a C string to a utf8 object.
-    return cpython.unicode.PyUnicode_DecodeUTF8(input, length, 'strict')
+    return cpython.unicode.PyUnicode_DecodeUTF8(input_str, length, 'strict')
 
-cdef inline object unicode_to_bytestring(object pystring, int * encoded):
+cdef inline object unicode_to_bytestring(object pystring, int* encoded):
     # This function will convert a utf8 string to a bytestring object.
     if cpython.unicode.PyUnicode_Check(pystring):
         pystring = cpython.unicode.PyUnicode_EncodeUTF8(cpython.unicode.PyUnicode_AS_UNICODE(pystring),
@@ -88,15 +92,16 @@ cdef inline int pystring_to_bytestring(object pystring, char ** cstring, Py_ssiz
     # First it will try treating it as a str object, but failing that
     # it will move to utf-8. If utf8 does not work, then it has to be
     # a non-supported encoding.
-    return _re2.PyObject_AsCharBuffer(pystring, <_re2.const_char_ptr*> cstring, length)
+    return _re2.PyObject_AsCharBuffer(pystring, <const char**> cstring, length)
 
 cdef extern from *:
     cdef void emit_ifndef_py_unicode_wide "#if !defined(Py_UNICODE_WIDE) //" ()
     cdef void emit_endif "#endif //" ()
 
 cdef class Match:
-    cdef _re2.StringPiece * matches
-    cdef _re2.const_stringintmap * named_groups
+    cdef _re2.StringPiece* matches
+    #cdef _re2.const_stringintmap* named_groups
+    cdef const cpp_map[string, int]* named_groups
 
     cdef bint encoded
     cdef int _lastindex
@@ -146,8 +151,8 @@ cdef class Match:
         if self._groups is not None:
             return
 
-        cdef _re2.const_char_ptr last_end = NULL
-        cdef _re2.const_char_ptr cur_end = NULL
+        cdef const char* last_end = NULL
+        cdef const char* cur_end = NULL
 
         for i in range(self.nmatches):
             if self.matches[i].data() == NULL:
@@ -307,7 +312,8 @@ cdef class Match:
         return ''.join(items)
 
     def groupdict(self):
-        cdef _re2.stringintmapiterator it
+        #cdef _re2.stringintmapiterator it
+        cdef cpp_map[string, int].const_iterator it
         cdef dict result = {}
         cdef dict indexes = {}
 
@@ -357,7 +363,8 @@ cdef class Match:
     property lastgroup:
         def __get__(self):
             self.init_groups()
-            cdef _re2.stringintmapiterator it
+            #cdef _re2.stringintmapiterator it
+            cdef cpp_map[string, int].const_iterator it
 
             if self._lastindex < 1:
                 return None
@@ -390,10 +397,10 @@ cdef class Pattern:
     def __dealloc__(self):
         del self.re_pattern
 
-    cdef _search(self, string, int pos, int endpos, _re2.re2_Anchor anchoring):
+    cdef _search(self, in_string, int pos, int endpos, _re2.re2_Anchor anchoring):
         """
-        Scan through string looking for a match, and return a corresponding
-        Match instance. Return None if no position in the string matches.
+        Scan through in_string looking for a match, and return a corresponding
+        Match instance. Return None if no position in the in_string matches.
         """
         cdef Py_ssize_t size
         cdef int result
@@ -402,12 +409,12 @@ cdef class Pattern:
         cdef _re2.StringPiece * sp
         cdef Match m = Match(self, self.ngroups + 1)
 
-        if hasattr(string, 'tostring'):
-            string = string.tostring()
+        if hasattr(in_string, 'tostring'):
+            in_string = in_string.tostring()
 
-        string = unicode_to_bytestring(string, &encoded)
+        in_string = unicode_to_bytestring(in_string, &encoded)
 
-        if pystring_to_bytestring(string, &cstring, &size) == -1:
+        if pystring_to_bytestring(in_string, &cstring, &size) == -1:
             raise TypeError("expected string or buffer")
 
         if endpos >= 0 and endpos <= pos:
@@ -429,33 +436,33 @@ cdef class Pattern:
         m.encoded = <bint>(encoded)
         m.named_groups = _re2.addressof(self.re_pattern.NamedCapturingGroups())
         m.nmatches = self.ngroups + 1
-        m.match_string = string
+        m.match_string = in_string
         m._pos = pos
         if endpos == -1:
-            m._endpos = len(string)
+            m._endpos = len(in_string)
         else:
             m._endpos = endpos
         return m
 
 
-    def search(self, string, int pos=0, int endpos=-1):
+    def search(self, in_string, int pos=0, int endpos=-1):
         """
         Scan through string looking for a match, and return a corresponding
         Match instance. Return None if no position in the string matches.
         """
-        return self._search(string, pos, endpos, _re2.UNANCHORED)
+        return self._search(in_string, pos, endpos, _re2.UNANCHORED)
 
 
-    def match(self, string, int pos=0, int endpos=-1):
+    def match(self, in_string, int pos=0, int endpos=-1):
         """
         Matches zero or more characters at the beginning of the string.
         """
-        return self._search(string, pos, endpos, _re2.ANCHOR_START)
+        return self._search(in_string, pos, endpos, _re2.ANCHOR_START)
 
     cdef _print_pattern(self):
-        cdef _re2.cpp_string * s
-        s = <_re2.cpp_string *>_re2.addressofs(self.re_pattern.pattern())
-        print cpp_to_pystring(s[0]) + "\n"
+        cdef cpp_string* s
+        s = <cpp_string*>_re2.addressofs(self.re_pattern.pattern())
+        print(cpp_to_pystring(s[0]) + "\n")
         sys.stdout.flush()
 
 
@@ -602,26 +609,26 @@ cdef class Pattern:
         del sp
         return resultlist
 
-    def sub(self, repl, string, int count=0):
+    def sub(self, repl, in_string, int count=0):
         """
         sub(repl, string[, count = 0]) --> newstring
         Return the string obtained by replacing the leftmost non-overlapping
         occurrences of pattern in string by the replacement repl.
         """
-        return self.subn(repl, string, count)[0]
+        return self.subn(repl, in_string, count)[0]
 
-    def subn(self, repl, string, int count=0):
+    def subn(self, repl, in_string, int count=0):
         """
-        subn(repl, string[, count = 0]) --> (newstring, number of subs)
+        subn(repl, in_string[, count = 0]) --> (newstring, number of subs)
         Return the tuple (new_string, number_of_subs_made) found by replacing
         the leftmost non-overlapping occurrences of pattern with the
         replacement repl.
         """
         cdef Py_ssize_t size
-        cdef char * cstring
-        cdef _re2.cpp_string * fixed_repl
-        cdef _re2.StringPiece * sp
-        cdef _re2.cpp_string * input_str
+        cdef char* cstring
+        cdef cpp_string* fixed_repl
+        cdef _re2.StringPiece* sp
+        cdef cpp_string* input_str
         cdef total_replacements = 0
         cdef int string_encoded = 0
         cdef int repl_encoded = 0
@@ -629,16 +636,16 @@ cdef class Pattern:
 
         if callable(repl):
             # This is a callback, so let's use the custom function
-            return self._subn_callback(repl, string, count)
+            return self._subn_callback(repl, in_string, count)
 
-        string = unicode_to_bytestring(string, &string_encoded)
+        in_string = unicode_to_bytestring(in_string, &string_encoded)
         repl = unicode_to_bytestring(repl, &repl_encoded)
         if pystring_to_bytestring(repl, &cstring, &size) == -1:
             raise TypeError("expected string or buffer")
 
         fixed_repl = NULL
-        cdef _re2.const_char_ptr s = cstring
-        cdef _re2.const_char_ptr end = s + size
+        cdef const char* s = cstring
+        cdef const char* end = s + size
         cdef int c = 0
         while s < end:
             c = s[0]
@@ -653,7 +660,7 @@ cdef class Pattern:
                         fixed_repl.push_back(c)
                 else:
                     if fixed_repl == NULL:
-                        fixed_repl = new _re2.cpp_string(cstring, s - cstring - 1)
+                        fixed_repl = new cpp_string(cstring, s - cstring - 1)
                     if c == 'n':
                         fixed_repl.push_back('\n')
                     else:
@@ -670,7 +677,7 @@ cdef class Pattern:
         else:
             sp = new _re2.StringPiece(cstring, size)
 
-        input_str = new _re2.cpp_string(string)
+        input_str = new cpp_string(in_string)
         if not count:
             total_replacements = _re2.pattern_GlobalReplace(input_str,
                                                             self.re_pattern[0],
@@ -694,7 +701,7 @@ cdef class Pattern:
         del sp
         return (result, total_replacements)
 
-    def _subn_callback(self, callback, string, int count=0):
+    def _subn_callback(self, callback, in_string, int count=0):
         """
         This function is probably the hardest to implement correctly.
         This is my first attempt, but if anybody has a better solution, please help out.
@@ -713,7 +720,7 @@ cdef class Pattern:
         if count < 0:
             count = 0
 
-        string = unicode_to_bytestring(string, &encoded)
+        in_string = unicode_to_bytestring(in_string, &encoded)
         if pystring_to_bytestring(string, &cstring, &size) == -1:
             raise TypeError("expected string or buffer")
         encoded = <bint>encoded
@@ -738,7 +745,7 @@ cdef class Pattern:
                 m.encoded = encoded
                 m.named_groups = _re2.addressof(self.re_pattern.NamedCapturingGroups())
                 m.nmatches = self.ngroups + 1
-                m.match_string = string
+                m.match_string = in_string
                 resultlist.append(callback(m) or '')
 
                 num_repl += 1
@@ -780,8 +787,8 @@ class CharClassProblemException(Exception):
 WHITESPACE = set(" \t\n\r\v\f")
 
 class Tokenizer:
-    def __init__(self, string):
-        self.string = string
+    def __init__(self, in_string):
+        self.string = in_string
         self.index = 0
         self.__next()
     def __next(self):
@@ -905,9 +912,9 @@ def _compile(pattern, int flags=0, int max_mem=8388608):
     """
     Compile a regular expression pattern, returning a pattern object.
     """
-    cdef char * string
+    cdef char* pattern_cstr
     cdef Py_ssize_t length
-    cdef _re2.StringPiece * s
+    cdef _re2.StringPiece* s
     cdef _re2.Options opts
     cdef int error_code
     cdef int encoded = 0
@@ -948,10 +955,10 @@ def _compile(pattern, int flags=0, int max_mem=8388608):
     # We use this function to get the proper length of the string.
 
     pattern = unicode_to_bytestring(pattern, &encoded)
-    if pystring_to_bytestring(pattern, &string, &length) == -1:
+    if pystring_to_bytestring(pattern, &pattern_cstr, &length) == -1:
         raise TypeError("first argument must be a string or compiled pattern")
 
-    s = new _re2.StringPiece(string, length)
+    s = new _re2.StringPiece(pattern_cstr, length)
 
     cdef _re2.RE2 * re_pattern = new _re2.RE2(s[0], opts)
 
@@ -982,46 +989,46 @@ def _compile(pattern, int flags=0, int max_mem=8388608):
     del s
     return pypattern
 
-def search(pattern, string, int flags=0):
+def search(pattern, in_string, int flags=0):
     """
     Scan through string looking for a match to the pattern, returning
     a match object or none if no match was found.
     """
-    return compile(pattern, flags).search(string)
+    return compile(pattern, flags).search(in_string)
 
-def match(pattern, string, int flags=0):
+def match(pattern, in_string, int flags=0):
     """
     Try to apply the pattern at the start of the string, returning
     a match object, or None if no match was found.
     """
-    return compile(pattern, flags).match(string)
+    return compile(pattern, flags).match(in_string)
 
-def finditer(pattern, string, int flags=0):
+def finditer(pattern, in_string, int flags=0):
     """
     Return an list of all non-overlapping matches in the
     string.  For each match, the iterator returns a match object.
 
     Empty matches are included in the result.
     """
-    return compile(pattern, flags).finditer(string)
+    return compile(pattern, flags).finditer(in_string)
 
-def findall(pattern, string, int flags=0):
+def findall(pattern, in_string, int flags=0):
     """
     Return an list of all non-overlapping matches in the
     string.  For each match, the iterator returns a match object.
 
     Empty matches are included in the result.
     """
-    return compile(pattern, flags).findall(string)
+    return compile(pattern, flags).findall(in_string)
 
-def split(pattern, string, int maxsplit=0):
+def split(pattern, in_string, int maxsplit=0):
     """
     Split the source string by the occurrences of the pattern,
     returning a list containing the resulting substrings.
     """
-    return compile(pattern).split(string, maxsplit)
+    return compile(pattern).split(in_string, maxsplit)
 
-def sub(pattern, repl, string, int count=0):
+def sub(pattern, repl, in_string, int count=0):
     """
     Return the string obtained by replacing the leftmost
     non-overlapping occurrences of the pattern in string by the
@@ -1030,9 +1037,9 @@ def sub(pattern, repl, string, int count=0):
     a callable, it's passed the match object and must return
     a replacement string to be used.
     """
-    return compile(pattern).sub(repl, string, count)
+    return compile(pattern).sub(repl, in_string, count)
 
-def subn(pattern, repl, string, int count=0):
+def subn(pattern, repl, in_string, int count=0):
     """
     Return a 2-tuple containing (new_string, number).
     new_string is the string obtained by replacing the leftmost
@@ -1043,7 +1050,7 @@ def subn(pattern, repl, string, int count=0):
     If it is a callable, it's passed the match object and must
     return a replacement string to be used.
     """
-    return compile(pattern).subn(repl, string, count)
+    return compile(pattern).subn(repl, in_string, count)
 
 _alphanum = {}
 for c in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890':

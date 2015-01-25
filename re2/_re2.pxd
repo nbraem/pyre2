@@ -1,50 +1,56 @@
 # TODO: bring up to current cython spec for const and c++ strings
 # see https://github.com/cython/cython/wiki/FAQ#id35
-cdef extern from *:
-    ctypedef char* const_char_ptr "const char*"
+#cdef extern from *:
+#    ctypedef char* const_char_ptr "const char*"
 
-cdef extern from "<string>" namespace "std":
-    cdef cppclass string:
-        string(char *)
-        string(char *, size_t n)
-        const_char_ptr c_str()
-        int length()
-        void push_back(char c)
-
-    ctypedef string cpp_string "std::string"
-    ctypedef string const_string "const std::string"
+#cdef extern from "<string>" namespace "std":
+#    cdef cppclass string:
+#        string(char *)
+#        string(char *, size_t n)
+#        const_char_ptr c_str()
+#        int length()
+#        void push_back(char c)
 
 
 
-cdef extern from "<map>" namespace "std":
-    cdef cppclass stringintmapiterator "std::map<std::string, int>::const_iterator":
-        cpp_string first
-        int second
-        stringintmapiterator operator++()
-        bint operator==(stringintmapiterator)
-        stringintmapiterator& operator*(stringintmapiterator)
-        bint operator!=(stringintmapiterator)
+#    ctypedef string cpp_string "std::string"
+#    ctypedef string const_string "const std::string"
 
-    cdef cppclass const_stringintmap "const std::map<std::string, int>":
-        stringintmapiterator begin()
-        stringintmapiterator end()
-        int operator[](cpp_string)
+from libcpp.string cimport string as cpp_string
+
+#cdef extern from "<map>" namespace "std":
+#    cdef cppclass stringintmapiterator "std::map<std::string, int>::const_iterator":
+#        cpp_string first
+#        int second
+#        stringintmapiterator operator++()
+#        bint operator==(stringintmapiterator)
+#        stringintmapiterator& operator*(stringintmapiterator)
+#        bint operator!=(stringintmapiterator)
+
+#    cdef cppclass const_stringintmap "const std::map<std::string, int>":
+#        stringintmapiterator begin()
+#        stringintmapiterator end()
+#        int operator[](cpp_string)
+
+from libcpp.map cimport map as cpp_map
+#cdef  cpp_map[string, int].const_iterator it = ...
 
 
+# update these string calls to python 2/3 versions
 cdef extern from "Python.h":
-    int PyObject_AsCharBuffer(object, const_char_ptr *, Py_ssize_t *)
+    int PyObject_AsCharBuffer(object, const char**, Py_ssize_t *)
     char * PyString_AS_STRING(object)
 
 cdef extern from "re2/stringpiece.h" namespace "re2":
     cdef cppclass StringPiece:
         StringPiece()
-        StringPiece(const_char_ptr)
-        StringPiece(const_char_ptr, int)
-        const_char_ptr data()
+        StringPiece(const char*)
+        StringPiece(const char*, int)
+        const char* data()
         int copy(char * buf, size_t n, size_t pos)
         int length()
 
-    ctypedef StringPiece const_StringPiece "const StringPiece"
+    #ctypedef StringPiece const_StringPiece "const StringPiece"
  
 cdef extern from "re2/re2.h" namespace "re2":
     cdef enum Anchor:
@@ -93,21 +99,22 @@ cdef extern from "re2/re2.h" namespace "re2":
         int case_sensitive()
         void set_encoding(re2_Encoding encoding)
 
-    ctypedef Options const_Options "const RE2::Options"
+    #ctypedef Options const_Options "const RE2::Options"
 
     cdef cppclass RE2:
-        RE2(const_StringPiece pattern, Options option)
-        RE2(const_StringPiece pattern)
-        int Match(const_StringPiece text, int startpos, int endpos,
+        RE2(const StringPiece pattern, Options option)
+        RE2(const StringPiece pattern)
+        int Match(const StringPiece text, int startpos, int endpos,
                   Anchor anchor, StringPiece * match, int nmatch) nogil
         int NumberOfCapturingGroups()
         int ok()
         const_string pattern()
         cpp_string error()
         ErrorCode error_code()
-        const_stringintmap& NamedCapturingGroups()
+        #const_stringintmap& NamedCapturingGroups()
+        const cpp_map[cpp_string, int]& NamedCapturingGroups()
 
-    ctypedef RE2 const_RE2 "const RE2"
+    #ctypedef RE2 const_RE2 "const RE2"
 
 
 # This header is used for ways to hack^Wbypass the cython
@@ -118,15 +125,27 @@ cdef extern from "_re2macros.h":
 
     # This fixes the bug Cython #548 whereby reference returns
     # cannot be addressed, due to it not being an l-value
-    const_stringintmap * addressof(const_stringintmap&)
-    cpp_string * addressofs(cpp_string&)
-    char * as_char(const_char_ptr)
+    #const_stringintmap * addressof(const_stringintmap&)
+    const cpp_map[cpp_string, int]* addressof(const cpp_map[cpp_string, int]&)
+    
+    #cpp_string * addressofs(cpp_string&)
+    string* addressofs(cpp_string&)
+    
+    char* as_char(const char*)
 
     # This fixes the bug whereby namespaces are causing
     # cython to just break for Cpp arguments.
-    int pattern_Replace(cpp_string *str,
-                        const_RE2 pattern,
-                        const_StringPiece rewrite)
-    int pattern_GlobalReplace(cpp_string *str,
-                              const_RE2 pattern,
-                              const_StringPiece rewrite)
+
+    #int pattern_Replace(cpp_string *str,
+    #                    const_RE2 pattern,
+    #                    const StringPiece rewrite)
+    #int pattern_GlobalReplace(cpp_string *str,
+    #                          const_RE2 pattern,
+    #                          const StringPiece rewrite)
+
+    int pattern_Replace(cpp_string* str,
+                        const RE2 pattern,
+                        const StringPiece rewrite)
+    int pattern_GlobalReplace(cpp_string* str,
+                              const RE2 pattern,
+                              const StringPiece rewrite)
