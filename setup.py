@@ -78,6 +78,8 @@ for re2_prefix in _re2_prefixes:
 else:
     re2_prefix = ""
 
+is_py_3 = int(sys.version_info[0] > 2)
+
 re2_ext = Extension( "re2",
         sources=['re2/re2.pyx'],
         language="c++",
@@ -87,7 +89,7 @@ re2_ext = Extension( "re2",
         runtime_library_dirs=[os.path.join(re2_prefix, "lib")] if re2_prefix else [],
     )
 
-cython_ext_list = cythonize(re2_ext)
+cython_ext_list = cythonize(re2_ext, compile_time_env={'IS_PY_THREE': is_py_3})
 
 setup(
     name="re2",

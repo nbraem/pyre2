@@ -35,11 +35,53 @@ from libcpp.string cimport string as cpp_string
 from libcpp.map cimport map as cpp_map
 #cdef  cpp_map[string, int].const_iterator it = ...
 
-
-# update these string calls to python 2/3 versions
 cdef extern from "Python.h":
-    int PyObject_AsCharBuffer(object, const char**, Py_ssize_t *)
-    char * PyString_AS_STRING(object)
+    IF IS_PY_THREE == 1:
+        cdef bint PyBytes_Check(object)
+        cdef int PyBytes_AsStringAndSize(object, char**, Py_ssize_t*)
+        #cdef object PyBytes_FromString(const char*)
+        #cdef object PyBytes_FromStringAndSize(const char*, Py_ssize_t)
+        #cdef char* PyBytes_AsString(object)
+
+        cdef char* PyUnicode_AsUTF8AndSize(object, Py_ssize_t*)
+        #cdef object PyUnicode_FromString(const char*)
+        #cdef object PyUnicode_FromStringAndSize(const char*, Py_ssize_t)
+        #cdef char* PyUnicode_AsUTF8(object)
+    ELSE:
+        #cdef object PyString_FromString(char *)
+        #cdef object PyString_FromStringAndSize(char *, Py_ssize_t len)
+        cdef int PyString_AsStringAndSize(object, char**, Py_ssize_t*)
+        #cdef char* PyString_AsString(object)
+
+
+IF IS_PY_THREE == 1:
+    cdef inline int pystring_to_cstr(object o, 
+                                char** c_str_ptr,
+                                Py_ssize_t *length, 
+                                ) except -1:
+        cdef int obj_type
+        cdef size_t b_length
+        if PyBytes_Check(o1):
+            obj_type = 1
+            if PyBytes_AsStringAndSize(o, c_str_ptr, length) == -1:
+                return -1
+        else:
+            obj_type = 0
+            c_str_ptr[0] = PyUnicode_AsUTF8AndSize(o, length)
+            if c_str_ptr[0] == NULL:
+                return -1
+        return obj_type
+    # end def
+ELSE:
+    cdef inline int pystring_to_cstr(object o,
+                                char** c_str_ptr,
+                                Py_ssize_t *length) except -1:
+        if PyString_AsStringAndSize(o1, c_str, length) == -1:
+            return -1
+        return 0
+    # end def
+# end IF
+
 
 cdef extern from "re2/stringpiece.h" namespace "re2":
     cdef cppclass StringPiece:
@@ -115,7 +157,6 @@ cdef extern from "re2/re2.h" namespace "re2":
         const cpp_map[cpp_string, int]& NamedCapturingGroups()
 
     #ctypedef RE2 const_RE2 "const RE2"
-
 
 # This header is used for ways to hack^Wbypass the cython
 # issues.

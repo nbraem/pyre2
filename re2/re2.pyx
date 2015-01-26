@@ -56,10 +56,14 @@ error = RegexError
 cdef int _I = I, _M = M, _S = S, _U = U, _X = X, _L = L
 
 cimport _re2
+from _re2 cimport pystring_to_cstr
+
 cimport cpython.unicode
 from cython.operator cimport preincrement as inc, dereference as deref
 import warnings
 
+# TODO: Update this and calls to this.  Decide what should be str and what should
+# by bytes.  Do we want to use this generally in Python
 cdef object cpp_to_pystring(cpp_string input_str):
     # This function is a quick converter from a std::string object
     # to a python string. By taking the slice we go to the right size,
@@ -85,14 +89,6 @@ cdef inline object unicode_to_bytestring(object pystring, int* encoded):
     else:
         encoded[0] = 0
     return pystring
-
-cdef inline int pystring_to_bytestring(object pystring, char ** cstring, Py_ssize_t * length):
-    # This function will convert a pystring to a bytesstring, placing
-    # the char * in cstring, and the length in length.
-    # First it will try treating it as a str object, but failing that
-    # it will move to utf-8. If utf8 does not work, then it has to be
-    # a non-supported encoding.
-    return _re2.PyObject_AsCharBuffer(pystring, <const char**> cstring, length)
 
 cdef extern from *:
     cdef void emit_ifndef_py_unicode_wide "#if !defined(Py_UNICODE_WIDE) //" ()
@@ -414,7 +410,7 @@ cdef class Pattern:
 
         in_string = unicode_to_bytestring(in_string, &encoded)
 
-        if pystring_to_bytestring(in_string, &cstring, &size) == -1:
+        if pystring_to_cstr(in_string, &cstring, &size) == -1:
             raise TypeError("expected string or buffer")
 
         if endpos >= 0 and endpos <= pos:
@@ -476,7 +472,7 @@ cdef class Pattern:
         cdef int encoded = 0
 
         string = unicode_to_bytestring(string, &encoded)
-        if pystring_to_bytestring(string, &cstring, &size) == -1:
+        if pystring_to_cstr(string, &cstring, &size) == -1:
             raise TypeError("expected string or buffer")
         encoded = <bint>encoded
 
@@ -555,7 +551,7 @@ cdef class Pattern:
             maxsplit = 0
 
         string = unicode_to_bytestring(string, &encoded)
-        if pystring_to_bytestring(string, &cstring, &size) == -1:
+        if pystring_to_cstr(string, &cstring, &size) == -1:
             raise TypeError("expected string or buffer")
 
         encoded = <bint>encoded
@@ -640,7 +636,7 @@ cdef class Pattern:
 
         in_string = unicode_to_bytestring(in_string, &string_encoded)
         repl = unicode_to_bytestring(repl, &repl_encoded)
-        if pystring_to_bytestring(repl, &cstring, &size) == -1:
+        if pystring_to_cstr(repl, &cstring, &size) == -1:
             raise TypeError("expected string or buffer")
 
         fixed_repl = NULL
@@ -721,7 +717,7 @@ cdef class Pattern:
             count = 0
 
         in_string = unicode_to_bytestring(in_string, &encoded)
-        if pystring_to_bytestring(string, &cstring, &size) == -1:
+        if pystring_to_cstr(string, &cstring, &size) == -1:
             raise TypeError("expected string or buffer")
         encoded = <bint>encoded
 
@@ -845,7 +841,7 @@ def prepare_pattern(pattern, int flags):
             while 1:
                 this = source.get()
                 if this is None:
-                    raise RegexError, "unexpected end of regular expression"
+                    raise RegexError("unexpected end of regular expression")
                 elif this == ']':
                     new_pattern.append(this)
                     break
@@ -955,7 +951,7 @@ def _compile(pattern, int flags=0, int max_mem=8388608):
     # We use this function to get the proper length of the string.
 
     pattern = unicode_to_bytestring(pattern, &encoded)
-    if pystring_to_bytestring(pattern, &pattern_cstr, &length) == -1:
+    if pystring_to_cstr(pattern, &pattern_cstr, &length) == -1:
         raise TypeError("first argument must be a string or compiled pattern")
 
     s = new _re2.StringPiece(pattern_cstr, length)
