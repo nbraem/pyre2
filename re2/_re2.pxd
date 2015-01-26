@@ -35,6 +35,8 @@ from libcpp.string cimport string as cpp_string
 from libcpp.map cimport map as cpp_map
 #cdef  cpp_map[string, int].const_iterator it = ...
 
+cdef int MAGIC=7
+
 cdef extern from "Python.h":
     IF IS_PY_THREE == 1:
         cdef bint PyBytes_Check(object)
@@ -55,28 +57,23 @@ cdef extern from "Python.h":
 
 
 IF IS_PY_THREE == 1:
-    cdef inline int pystring_to_cstr(object o, 
-                                char** c_str_ptr,
-                                Py_ssize_t *length, 
-                                ) except -1:
+    cdef inline int pystring_to_cstr(object o, char** c_str_ptr, Py_ssize_t *length) except -1:
         cdef int obj_type
         cdef size_t b_length
-        if PyBytes_Check(o1):
-            obj_type = 1
+        if PyBytes_Check(o):
+            obj_type = 0
             if PyBytes_AsStringAndSize(o, c_str_ptr, length) == -1:
                 return -1
         else:
-            obj_type = 0
+            obj_type = 1
             c_str_ptr[0] = PyUnicode_AsUTF8AndSize(o, length)
             if c_str_ptr[0] == NULL:
                 return -1
         return obj_type
     # end def
 ELSE:
-    cdef inline int pystring_to_cstr(object o,
-                                char** c_str_ptr,
-                                Py_ssize_t *length) except -1:
-        if PyString_AsStringAndSize(o1, c_str, length) == -1:
+    cdef inline int pystring_to_cstr(object o, char** c_str_ptr, Py_ssize_t *length) except -1:
+        if PyString_AsStringAndSize(o, c_str, length) == -1:
             return -1
         return 0
     # end def
@@ -148,20 +145,20 @@ cdef extern from "re2/re2.h" namespace "re2":
         RE2(const StringPiece pattern)
         int Match(const StringPiece text, int startpos, int endpos,
                   Anchor anchor, StringPiece * match, int nmatch) nogil
-        int NumberOfCapturingGroups()
+        int NumberOfCapturingGroups() const
         int ok()
-        const_string pattern()
+        const cpp_string pattern()
         cpp_string error()
         ErrorCode error_code()
         #const_stringintmap& NamedCapturingGroups()
-        const cpp_map[cpp_string, int]& NamedCapturingGroups()
+        const cpp_map[cpp_string, int]& NamedCapturingGroups() const
 
     #ctypedef RE2 const_RE2 "const RE2"
 
 # This header is used for ways to hack^Wbypass the cython
 # issues.
 cdef extern from "_re2macros.h":
-    StringPiece * new_StringPiece_array(int) nogil
+    StringPiece* new_StringPiece_array(int) nogil
     void delete_StringPiece_array(StringPiece* ptr)
 
     # This fixes the bug Cython #548 whereby reference returns
@@ -170,7 +167,7 @@ cdef extern from "_re2macros.h":
     const cpp_map[cpp_string, int]* addressof(const cpp_map[cpp_string, int]&)
     
     #cpp_string * addressofs(cpp_string&)
-    string* addressofs(cpp_string&)
+    cpp_string* addressofs(cpp_string&)
     
     char* as_char(const char*)
 
