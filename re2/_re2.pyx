@@ -153,7 +153,7 @@ cdef class Match:
 
         self.init_groups()
 
-        if isinstance(groupnum, STR_TYPE):
+        if is_bytes(groupnum):
             return self.groupdict()[groupnum]
 
         idx = groupnum
@@ -518,7 +518,7 @@ cdef class Pattern:
         if callable(repl):
             # This is a callback, so let's use the custom function
             return self._subn_callback(repl, in_string, count)
-        if not isinstance(repl, STR_TYPE):
+        if not is_bytes(repl):
             raise TypeError("Expected callable or byte string")
 
         repl_encoded = pystring_to_cstr(repl, &repl_c_str, &repl_size)
@@ -635,6 +635,7 @@ cdef class Pattern:
                     break
 
             resultlist.append(sp.data()[pos:])
+            #print("subn res", resultlist)
             return (b''.join(resultlist), num_repl)
         finally:
             del sp
@@ -644,7 +645,7 @@ _cache_repl = {}
 
 _MAXCACHE = 100
 
-def compile(bytes pattern, int flags=0, int max_mem=8388608):
+def compile(pattern, int flags=0, int max_mem=8388608):
     cachekey = (type(pattern),) + (pattern, flags)
     p = _cache.get(cachekey)
     if p is not None:
@@ -674,10 +675,11 @@ class Tokenizer:
         if self.index >= len(self.string):
             self.next = None
             return
-        ch = self.string[self.index]
+        idx = self.index
+        ch = self.string[idx:idx+1]
         if ch[0] == b"\\"[0]:
             try:
-                c = self.string[self.index + 1]
+                c = self.string[idx + 1: idx+2]
             except IndexError:
                 raise RegexError("bogus escape (end of line)")
             ch = ch + c
@@ -703,6 +705,7 @@ def prepare_pattern(pattern, int flags):
 
     while 1:
         this = source.get()
+        #print('this:', this)
         if this is None:
             break
         if flags & _X:
@@ -752,7 +755,7 @@ def prepare_pattern(pattern, int flags):
                         new_pattern.append(this)
                 else:
                     new_pattern.append(this)
-        elif this[0] == b'\\':
+        elif this[0] == b'\\'[0]:
             if this[1] in b'89':
                 raise BackreferencesException()
             elif this[1] in b'1234567':
@@ -787,7 +790,7 @@ def prepare_pattern(pattern, int flags):
 
 
 
-def _compile(bytes pattern, int flags=0, int max_mem=8388608):
+def _compile(pattern, int flags=0, int max_mem=8388608):
     """
     Compile a regular expression pattern, returning a pattern object.
     """
@@ -803,9 +806,10 @@ def _compile(bytes pattern, int flags=0, int max_mem=8388608):
             raise ValueError('Cannot process flags argument with a compiled pattern')
         return pattern
 
-    cdef object original_pattern = pattern
+    cdef bytes original_pattern = pattern
     try:
         pattern = prepare_pattern(original_pattern, flags)
+        #print("prepared", pattern)
     except BackreferencesException:
         error_msg = "Backreferences not supported"
         if current_notification == <int>FALLBACK_EXCEPTION:
@@ -836,6 +840,7 @@ def _compile(bytes pattern, int flags=0, int max_mem=8388608):
     if encoded == -1:
         raise TypeError("first argument must be a string or compiled pattern")
 
+    #print("trying pattern", pattern)
     s = new StringPiece(pattern_cstr, length)
 
     cdef RE2* re_pattern = new RE2(s[0], opts)
@@ -934,16 +939,25 @@ for c in b'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890':
     _alphanum[c] = 1
 del c
 
+_alphanum2 = {}
+for c in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890':
+    _alphanum2[c] = 1
+del c
+
 def escape(pattern):
     "Escape all non-alphanumeric characters in pattern."
     s = list(pattern)
     alphanum = _alphanum
     for i in range(len(pattern)):
-        c = pattern[i]
-        if ord(c) < 0x80 and c not in alphanum:
+        c = pattern[i:i+1]
+        c_ord = ord(c)
+        if c_ord < 0x80 and c_ord not in alphanum:
             if c == b"\000":
                 s[i] = b"\\000"
             else:
                 s[i] = b"\\" + c
+        else:
+            s[i] = c
     return pattern[:0].join(s)
+
 

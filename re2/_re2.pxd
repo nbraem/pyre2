@@ -9,6 +9,7 @@ cdef extern from "Python.h":
         cdef bint PyBytes_Check(object)
         cdef int PyBytes_AsStringAndSize(object, char**, Py_ssize_t*)
     ELSE:
+        cdef bint PyString_Check(object)
         cdef int PyString_AsStringAndSize(object, char**, Py_ssize_t*)
 
 
@@ -36,10 +37,11 @@ cdef inline bytes _bytes(s):
     ELSE:
         return s
 
-IF IS_PY_THREE == 1:
-    STR_TYPE = bytes
-ELSE:
-    STR_TYPE = str
+cdef inline bint is_bytes(s):
+    IF IS_PY_THREE == 1:
+        return PyBytes_Check(s)
+    ELSE:
+        return PyString_Check(s)
 
 cdef extern from "re2/stringpiece.h" namespace "re2":
     cdef cppclass StringPiece:
