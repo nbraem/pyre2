@@ -398,13 +398,15 @@ cdef class Pattern:
         cdef StringPiece * sp
         cdef Match m = Match(self, self.ngroups + 1)
 
-        if hasattr(in_string, 'tostring'):
-            in_string = in_string.tostring()
+        #if hasattr(in_string, 'tostring'):
+        #    in_string = in_string.tostring()
 
         #in_string = unicode_to_bytestring(in_string, &encoded)
-
-        if pystring_to_cstr(in_string, &cstring, &size) == -1:
+        encoded = pystring_to_cstr(in_string, &cstring, &size)
+        if encoded == -1:
             raise TypeError("expected string or buffer")
+        if self.encoded != <bint> encoded:
+            raise TypeError("string type mismatch")
 
         if endpos >= 0 and endpos <= pos:
             return None
@@ -465,9 +467,11 @@ cdef class Pattern:
         cdef int encoded = 0
 
         #string = unicode_to_bytestring(string, &encoded)
-        if pystring_to_cstr(in_string, &in_c_str, &size) == -1:
+        encoded = pystring_to_cstr(in_string, &in_c_str, &size)
+        if encoded == -1:
             raise TypeError("expected string or buffer")
-        encoded = <bint>encoded
+        if self.encoded != <bint> encoded:
+            raise TypeError("string type mismatch")
 
         if endpos != -1 and endpos < size:
             size = endpos
@@ -533,7 +537,7 @@ cdef class Pattern:
         cdef int pos = 0
         cdef int lookahead = 0
         cdef int num_split = 0
-        cdef char * in_c_str
+        cdef char* in_c_str
         cdef StringPiece * sp
         cdef StringPiece * matches
         cdef Match m
@@ -547,13 +551,16 @@ cdef class Pattern:
         encoded = pystring_to_cstr(in_string, &in_c_str, &size)
         if encoded == -1:
             raise TypeError("expected string or buffer")
+        if self.encoded != <bint> encoded:
+            raise TypeError("string type mismatch")
 
         matches = new_StringPiece_array(self.ngroups + 1)
         sp = new StringPiece(in_c_str, size)
 
         while True:
             with nogil:
-                result = self.re_pattern.Match(sp[0], <int>(pos + lookahead), <int>size, UNANCHORED, matches, self.ngroups + 1)
+                result = self.re_pattern.Match(sp[0], <int>(pos + lookahead), 
+                    <int>size, UNANCHORED, matches, self.ngroups + 1)
             if result == 0:
                 break
 
@@ -577,7 +584,8 @@ cdef class Pattern:
                         resultlist.append(None)
                     else:
                         if encoded:
-                            resultlist.append(char_to_utf8(matches[group + 1].data(), matches[group + 1].length()))
+                            resultlist.append(char_to_utf8(matches[group + 1].data(), 
+                                matches[group + 1].length()))
                         else:
                             resultlist.append(matches[group + 1].data()[:matches[group + 1].length()])
 
@@ -619,9 +627,8 @@ cdef class Pattern:
         cdef char* input_c_str
         cdef cpp_string* input_cpp_str
         cdef total_replacements = 0
-        cdef int string_encoded = 0
+        cdef int in_encoded = 0
         cdef int repl_encoded = 0
-        cdef int encoded = 0
 
         if callable(repl):
             # This is a callback, so let's use the custom function
@@ -629,9 +636,12 @@ cdef class Pattern:
 
         #in_string = unicode_to_bytestring(in_string, &string_encoded)
         #repl = unicode_to_bytestring(repl, &repl_encoded)
-        encoded = pystring_to_cstr(repl, &repl_c_str, &repl_size)
-        if encoded == -1:
+        repl_encoded = pystring_to_cstr(repl, &repl_c_str, &repl_size)
+        if repl_encoded == -1:
             raise TypeError("expected string or buffer")
+        if self.encoded != <bint> repl_encoded:
+            raise TypeError("string type mismatch")
+
 
         fixed_repl = NULL
         cdef const char* s = repl_c_str
@@ -650,7 +660,8 @@ cdef class Pattern:
                         fixed_repl.push_back(c)
                 else:
                     if fixed_repl == NULL:
-                        fixed_repl = new cpp_string(repl_c_str, s - repl_c_str - 1)
+                        fixed_repl = new cpp_string(repl_c_str, 
+                                                    s - repl_c_str - 1)
                     if c == 'n':
                         fixed_repl.push_back('\n')
                     else:
@@ -667,8 +678,12 @@ cdef class Pattern:
         else:
             sp = new StringPiece(repl_c_str, repl_size)
 
-        if pystring_to_cstr(in_string, &input_c_str, &input_size) == -1:
+        in_encoded = pystring_to_cstr(in_string, &input_c_str, &input_size)
+        if in_encoded == -1:
             raise TypeError("expected string or buffer")
+        if self.encoded != <bint> in_encoded:
+            raise TypeError("string type mismatch")
+
         input_cpp_str = new cpp_string(input_c_str)
         if not count:
             total_replacements = pattern_GlobalReplace(input_cpp_str,
@@ -684,7 +699,8 @@ cdef class Pattern:
             del sp
             raise NotImplementedError("So far pyre2 does not support custom replacement counts")
 
-        if string_encoded or (repl_encoded and total_replacements > 0):
+        #if in_encoded or (repl_encoded and total_replacements > 0):
+        if self.encoded:
             result = cpp_to_utf8(input_cpp_str[0])
         else:
             result = cpp_to_pystring(input_cpp_str[0])
@@ -714,9 +730,11 @@ cdef class Pattern:
             count = 0
 
         #in_string = unicode_to_bytestring(in_string, &encoded)
-        if pystring_to_cstr(in_string, &input_c_str, &size) == -1:
+        encoded = pystring_to_cstr(in_string, &input_c_str, &size)
+        if encoded == -1:
             raise TypeError("expected string or buffer")
-        encoded = <bint> encoded
+        if self.encoded != <bint> encoded:
+            raise TypeError("string type mismatch")
 
         sp = new StringPiece(input_c_str, size)
 
@@ -747,10 +765,10 @@ cdef class Pattern:
 
             if encoded:
                 resultlist.append(char_to_utf8(&sp.data()[pos], sp.length() - pos))
-                return (u''.join(resultlist), num_repl)
+                return (''.join(resultlist), num_repl)
             else:
                 resultlist.append(sp.data()[pos:])
-                return (''.join(resultlist), num_repl)
+                return (b''.join(resultlist), num_repl)
         finally:
             del sp
 
@@ -947,13 +965,14 @@ def _compile(pattern, int flags=0, int max_mem=8388608):
 
     # We use this function to get the proper length of the string.
 
-    pattern = unicode_to_bytestring(pattern, &encoded)
-    if pystring_to_cstr(pattern, &pattern_cstr, &length) == -1:
+    #pattern = unicode_to_bytestring(pattern, &encoded)
+    encoded = pystring_to_cstr(pattern, &pattern_cstr, &length)
+    if encoded == -1:
         raise TypeError("first argument must be a string or compiled pattern")
 
     s = new StringPiece(pattern_cstr, length)
 
-    cdef RE2 * re_pattern = new RE2(s[0], opts)
+    cdef RE2* re_pattern = new RE2(s[0], opts)
 
     if not re_pattern.ok():
         # Something went wrong with the compilation.
