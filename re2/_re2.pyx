@@ -2,7 +2,6 @@
 # Import re flags to be compatible.
 import sys
 import re
-cimport cpython.unicode
 from cython.operator cimport preincrement as inc, dereference as deref
 import warnings
 
@@ -55,44 +54,16 @@ error = RegexError
 
 cdef int _I = I, _M = M, _S = S, _U = U, _X = X, _L = L
 
-# TODO: Update this and calls to this.  Decide what should be str and what should
-# by bytes.  Do we want to use this generally in Python
-cdef object cpp_to_pystring(cpp_string input_str):
+cdef inline bytes cpp_to_pystring(cpp_string input_str):
     # This function is a quick converter from a std::string object
-    # to a python string. By taking the slice we go to the right size,
+    # to a python byte string. By taking the slice we go to the right size,
     # despite spurious or missing null characters.
     return input_str.c_str()[:input_str.length()]
 
-cdef inline object cpp_to_utf8(cpp_string input_str):
-    # This function converts a std::string object to a utf8 object.
-    return cpython.unicode.PyUnicode_DecodeUTF8(input_str.c_str(), 
-                                                input_str.length(), 'strict')
-
-cdef inline object char_to_utf8(const char* input_str, int length):
-    # This function converts a C string to a utf8 object.
-    return cpython.unicode.PyUnicode_DecodeUTF8(input_str, length, 'strict')
-
-cdef inline object unicode_to_bytestring(object pystring, int* encoded):
-    # This function will convert a utf8 string to a bytestring object.
-    if cpython.unicode.PyUnicode_Check(pystring):
-        pystring = cpython.unicode.PyUnicode_EncodeUTF8(cpython.unicode.PyUnicode_AS_UNICODE(pystring),
-                                                       cpython.unicode.PyUnicode_GET_SIZE(pystring),
-                                                       "strict")
-        encoded[0] = 1
-    else:
-        encoded[0] = 0
-    return pystring
-
-cdef extern from *:
-    cdef void emit_ifndef_py_unicode_wide "#if !defined(Py_UNICODE_WIDE) //" ()
-    cdef void emit_endif "#endif //" ()
-
 cdef class Match:
     cdef StringPiece* matches
-    #cdef _re2.const_stringintmap* named_groups
     cdef const cpp_map[cpp_string, int]* named_groups
 
-    cdef bint encoded
     cdef int _lastindex
     cdef int nmatches
     cdef int _pos
@@ -135,7 +106,6 @@ cdef class Match:
     cdef init_groups(self):
         cdef list groups = []
         cdef int i
-        cdef bint cur_encoded = self.encoded
 
         if self._groups is not None:
             return
@@ -160,11 +130,9 @@ cdef class Match:
                         if cur_end > last_end:
                             last_end = cur_end
                             self._lastindex = i
-
-                if cur_encoded:
-                    groups.append(char_to_utf8(self.matches[i].data(), self.matches[i].length()))
-                else:
-                    groups.append(self.matches[i].data()[:self.matches[i].length()])
+                groups.append(self.matches[i].data()[:self.matches[i].length()])
+            # end else
+        # end for i
         self._groups = tuple(groups)
 
     def groups(self, default=None):
@@ -185,7 +153,7 @@ cdef class Match:
 
         self.init_groups()
 
-        if isinstance(groupnum, str):
+        if isinstance(groupnum, STR_TYPE):
             return self.groupdict()[groupnum]
 
         idx = groupnum
@@ -193,61 +161,6 @@ cdef class Match:
         if idx > self.nmatches - 1:
             raise IndexError("no such group")
         return self._groups[idx]
-
-    cdef object _convert_positions(self, positions):
-        cdef char * s = self.match_string
-        cdef int cpos = 0
-        cdef int upos = 0
-        cdef int size = len(self.match_string)
-        cdef int c
-
-        new_positions = []
-        i = 0
-        num_positions = len(positions)
-        if positions[i] == -1:
-            new_positions.append(-1)
-            inc(i)
-            if i == num_positions:
-                return new_positions
-        if positions[i] == 0:
-            new_positions.append(0)
-            inc(i)
-            if i == num_positions:
-                return new_positions
-
-        while cpos < size:
-            c = <unsigned char>s[cpos]
-            if c < 0x80:
-                inc(cpos)
-                inc(upos)
-            elif c < 0xe0:
-                cpos += 2
-                inc(upos)
-            elif c < 0xf0:
-                cpos += 3
-                inc(upos)
-            else:
-                cpos += 4
-                inc(upos)
-                # wide unicode chars get 2 unichars when python is compiled with --enable-unicode=ucs2
-                # TODO: verify this
-                emit_ifndef_py_unicode_wide()
-                inc(upos)
-                emit_endif()
-
-            if positions[i] == cpos:
-                new_positions.append(upos)
-                inc(i)
-                if i == num_positions:
-                    return new_positions
-
-    def _convert_spans(self, spans):
-        positions = [x for x,y in spans] + [y for x,y in spans]
-        positions = sorted(set(positions))
-        posdict = dict(zip(positions, self._convert_positions(positions)))
-
-        return [(posdict[x], posdict[y]) for x,y in spans]
-
 
     cdef _make_spans(self):
         if self._spans is not None:
@@ -269,9 +182,6 @@ cdef class Match:
                 end = start + piece.length()
                 spans.append((start, end))
 
-        if self.encoded:
-            spans = self._convert_spans(spans)
-
         self._spans = tuple(spans)
 
     property regs:
@@ -280,25 +190,25 @@ cdef class Match:
                 self._make_spans()
             return self._spans
 
-    def expand(self, object template):
+    def expand(self, bytes template):
         # TODO - This can be optimized to work a bit faster in C.
         # Expand a template with groups
-        items = template.split('\\')
+        items = template.split(b'\\')
         for i, item in enumerate(items[1:]):
             if item[0].isdigit():
                 # Number group
-                if item[0] == '0':
-                    items[i + 1] = '\x00' + item[1:]
+                if item[0] == b'0'[0]:
+                    items[i + 1] = b'\x00' + item[1:]
                 else:
                     items[i + 1] = self.group(int(item[0])) + item[1:]
-            elif item[:2] == 'g<' and '>' in item:
+            elif item[:2] == b'g<' and b'>' in item:
                 # This is a named group
-                name, rest = item[2:].split('>', 1)
+                name, rest = item[2:].split(b'>', 1)
                 items[i + 1] = self.group(name) + rest
             else:
                 # This isn't a template at all
-                items[i + 1] = '\\' + item
-        return ''.join(items)
+                items[i + 1] = b'\\' + item
+        return b''.join(items)
 
     def groupdict(self):
         #cdef _re2.stringintmapiterator it
@@ -352,7 +262,6 @@ cdef class Match:
     property lastgroup:
         def __get__(self):
             self.init_groups()
-            #cdef _re2.stringintmapiterator it
             cdef cpp_map[cpp_string, int].const_iterator it
 
             if self._lastindex < 1:
@@ -370,7 +279,6 @@ cdef class Match:
 cdef class Pattern:
     cdef RE2 * re_pattern
     cdef int ngroups
-    cdef bint encoded
     cdef int _flags
     cdef public object pattern
     cdef object __weakref__
@@ -386,7 +294,7 @@ cdef class Pattern:
     def __dealloc__(self):
         del self.re_pattern
 
-    cdef _search(self, in_string, int pos, int endpos, re2_Anchor anchoring):
+    cdef _search(self, bytes in_string, int pos, int endpos, re2_Anchor anchoring):
         """
         Scan through in_string looking for a match, and return a corresponding
         Match instance. Return None if no position in the in_string matches.
@@ -398,15 +306,9 @@ cdef class Pattern:
         cdef StringPiece * sp
         cdef Match m = Match(self, self.ngroups + 1)
 
-        #if hasattr(in_string, 'tostring'):
-        #    in_string = in_string.tostring()
-
-        #in_string = unicode_to_bytestring(in_string, &encoded)
         encoded = pystring_to_cstr(in_string, &cstring, &size)
         if encoded == -1:
             raise TypeError("expected string or buffer")
-        if self.encoded != <bint> encoded:
-            raise TypeError("string type mismatch")
 
         if endpos >= 0 and endpos <= pos:
             return None
@@ -424,7 +326,7 @@ cdef class Pattern:
         del sp
         if result == 0:
             return None
-        m.encoded = <bint>(encoded)
+
         m.named_groups = addressof(self.re_pattern.NamedCapturingGroups())
         m.nmatches = self.ngroups + 1
         m.match_string = in_string
@@ -453,11 +355,11 @@ cdef class Pattern:
     cdef _print_pattern(self):
         cdef cpp_string* s
         s = <cpp_string*>addressofs(self.re_pattern.pattern())
-        print(cpp_to_pystring(s[0]) + "\n")
+        print(cpp_to_pystring(s[0]) + b"\n")
         sys.stdout.flush()
 
 
-    cdef _finditer(self, object in_string, int pos=0, int endpos=-1, int as_match=0):
+    cdef _finditer(self, bytes in_string, int pos=0, int endpos=-1, int as_match=0):
         cdef Py_ssize_t size
         cdef int result
         cdef char* in_c_str
@@ -466,12 +368,9 @@ cdef class Pattern:
         cdef list resultlist = []
         cdef int encoded = 0
 
-        #string = unicode_to_bytestring(string, &encoded)
         encoded = pystring_to_cstr(in_string, &in_c_str, &size)
         if encoded == -1:
             raise TypeError("expected string or buffer")
-        if self.encoded != <bint> encoded:
-            raise TypeError("string type mismatch")
 
         if endpos != -1 and endpos < size:
             size = endpos
@@ -484,7 +383,6 @@ cdef class Pattern:
                 result = self.re_pattern.Match(sp[0], <int>pos, <int>size, UNANCHORED, m.matches, self.ngroups + 1)
             if result == 0:
                 break
-            m.encoded = encoded
             m.named_groups = addressof(self.re_pattern.NamedCapturingGroups())
             m.nmatches = self.ngroups + 1
             m.match_string = in_string
@@ -495,7 +393,7 @@ cdef class Pattern:
                 m._endpos = endpos
             if as_match:
                 if self.ngroups > 1:
-                    resultlist.append(m.groups(""))
+                    resultlist.append(m.groups(b""))
                 else:
                     resultlist.append(m.group(self.ngroups))
             else:
@@ -510,7 +408,7 @@ cdef class Pattern:
         del sp
         return resultlist
 
-    def finditer(self, object string, int pos=0, int endpos=-1):
+    def finditer(self, string, int pos=0, int endpos=-1):
         """
         Return all non-overlapping matches of pattern in string as a list
         of match objects.
@@ -518,14 +416,14 @@ cdef class Pattern:
         # TODO This builds a list and returns its iterator. Probably could be more memory efficient
         return self._finditer(string, pos, endpos, 0).__iter__()
 
-    def findall(self, object string, int pos=0, int endpos=-1):
+    def findall(self, string, int pos=0, int endpos=-1):
         """
         Return all non-overlapping matches of pattern in string as a list
         of strings.
         """
         return self._finditer(string, pos, endpos, 1)
 
-    def split(self, in_string, int maxsplit=0):
+    def split(self, bytes in_string, int maxsplit=0):
         """
         split(in_string[, maxsplit = 0]) --> list
         Split a string by the occurances of the pattern.
@@ -547,12 +445,9 @@ cdef class Pattern:
         if maxsplit < 0:
             maxsplit = 0
 
-        #string = unicode_to_bytestring(string, &encoded)
         encoded = pystring_to_cstr(in_string, &in_c_str, &size)
         if encoded == -1:
             raise TypeError("expected string or buffer")
-        if self.encoded != <bint> encoded:
-            raise TypeError("string type mismatch")
 
         matches = new_StringPiece_array(self.ngroups + 1)
         sp = new StringPiece(in_c_str, size)
@@ -574,20 +469,13 @@ cdef class Pattern:
                 lookahead += 1
                 continue
 
-            if encoded:
-                resultlist.append(char_to_utf8(&sp.data()[pos], match_start - pos))
-            else:
-                resultlist.append(sp.data()[pos:match_start])
+            resultlist.append(sp.data()[pos:match_start])
             if self.ngroups > 0:
                 for group in range(self.ngroups):
                     if matches[group + 1].data() == NULL:
                         resultlist.append(None)
                     else:
-                        if encoded:
-                            resultlist.append(char_to_utf8(matches[group + 1].data(), 
-                                matches[group + 1].length()))
-                        else:
-                            resultlist.append(matches[group + 1].data()[:matches[group + 1].length()])
+                        resultlist.append(matches[group + 1].data()[:matches[group + 1].length()])
 
             # offset the pos to move to the next point
             pos = match_end
@@ -597,15 +485,12 @@ cdef class Pattern:
             if maxsplit and num_split >= maxsplit:
                 break
 
-        if encoded:
-            resultlist.append(char_to_utf8(&sp.data()[pos], sp.length() - pos))
-        else:
-            resultlist.append(sp.data()[pos:])
+        resultlist.append(sp.data()[pos:])
         delete_StringPiece_array(matches)
         del sp
         return resultlist
 
-    def sub(self, repl, in_string, int count=0):
+    def sub(self, repl, bytes in_string, int count=0):
         """
         sub(repl, string[, count = 0]) --> newstring
         Return the string obtained by replacing the leftmost non-overlapping
@@ -613,7 +498,7 @@ cdef class Pattern:
         """
         return self.subn(repl, in_string, count)[0]
 
-    def subn(self, repl, in_string, int count=0):
+    def subn(self, repl, bytes in_string, int count=0):
         """
         subn(repl, in_string[, count = 0]) --> (newstring, number of subs)
         Return the tuple (new_string, number_of_subs_made) found by replacing
@@ -633,14 +518,12 @@ cdef class Pattern:
         if callable(repl):
             # This is a callback, so let's use the custom function
             return self._subn_callback(repl, in_string, count)
+        if not isinstance(repl, STR_TYPE):
+            raise TypeError("Expected callable or byte string")
 
-        #in_string = unicode_to_bytestring(in_string, &string_encoded)
-        #repl = unicode_to_bytestring(repl, &repl_encoded)
         repl_encoded = pystring_to_cstr(repl, &repl_c_str, &repl_size)
         if repl_encoded == -1:
             raise TypeError("expected string or buffer")
-        if self.encoded != <bint> repl_encoded:
-            raise TypeError("string type mismatch")
 
 
         fixed_repl = NULL
@@ -681,8 +564,6 @@ cdef class Pattern:
         in_encoded = pystring_to_cstr(in_string, &input_c_str, &input_size)
         if in_encoded == -1:
             raise TypeError("expected string or buffer")
-        if self.encoded != <bint> in_encoded:
-            raise TypeError("string type mismatch")
 
         input_cpp_str = new cpp_string(input_c_str)
         if not count:
@@ -699,11 +580,7 @@ cdef class Pattern:
             del sp
             raise NotImplementedError("So far pyre2 does not support custom replacement counts")
 
-        #if in_encoded or (repl_encoded and total_replacements > 0):
-        if self.encoded:
-            result = cpp_to_utf8(input_cpp_str[0])
-        else:
-            result = cpp_to_pystring(input_cpp_str[0])
+        result = cpp_to_pystring(input_cpp_str[0])
         del fixed_repl
         del input_cpp_str
         del sp
@@ -729,12 +606,9 @@ cdef class Pattern:
         if count < 0:
             count = 0
 
-        #in_string = unicode_to_bytestring(in_string, &encoded)
         encoded = pystring_to_cstr(in_string, &input_c_str, &size)
         if encoded == -1:
             raise TypeError("expected string or buffer")
-        if self.encoded != <bint> encoded:
-            raise TypeError("string type mismatch")
 
         sp = new StringPiece(input_c_str, size)
 
@@ -742,33 +616,26 @@ cdef class Pattern:
             while True:
                 m = Match(self, self.ngroups + 1)
                 with nogil:
-                    result = self.re_pattern.Match(sp[0], <int>pos, <int>size, UNANCHORED, m.matches, self.ngroups + 1)
+                    result = self.re_pattern.Match(sp[0], <int>pos, <int>size, 
+                                    UNANCHORED, m.matches, self.ngroups + 1)
                 if result == 0:
                     break
 
                 endpos = m.matches[0].data() - input_c_str
-                if encoded:
-                    resultlist.append(char_to_utf8(&sp.data()[pos], endpos - pos))
-                else:
-                    resultlist.append(sp.data()[pos:endpos])
+                resultlist.append(sp.data()[pos:endpos])
                 pos = endpos + m.matches[0].length()
 
-                m.encoded = encoded
                 m.named_groups = addressof(self.re_pattern.NamedCapturingGroups())
                 m.nmatches = self.ngroups + 1
                 m.match_string = in_string
-                resultlist.append(callback(m) or '')
+                resultlist.append(callback(m) or b'')
 
                 num_repl += 1
                 if count and num_repl >= count:
                     break
 
-            if encoded:
-                resultlist.append(char_to_utf8(&sp.data()[pos], sp.length() - pos))
-                return (''.join(resultlist), num_repl)
-            else:
-                resultlist.append(sp.data()[pos:])
-                return (b''.join(resultlist), num_repl)
+            resultlist.append(sp.data()[pos:])
+            return (b''.join(resultlist), num_repl)
         finally:
             del sp
 
@@ -777,7 +644,7 @@ _cache_repl = {}
 
 _MAXCACHE = 100
 
-def compile(pattern, int flags=0, int max_mem=8388608):
+def compile(bytes pattern, int flags=0, int max_mem=8388608):
     cachekey = (type(pattern),) + (pattern, flags)
     p = _cache.get(cachekey)
     if p is not None:
@@ -795,23 +662,24 @@ class BackreferencesException(Exception):
 class CharClassProblemException(Exception):
     pass
 
-WHITESPACE = set(" \t\n\r\v\f")
+WHITESPACE = set(b" \t\n\r\v\f")
 
 class Tokenizer:
     def __init__(self, in_string):
         self.string = in_string
         self.index = 0
         self.__next()
+
     def __next(self):
         if self.index >= len(self.string):
             self.next = None
             return
         ch = self.string[self.index]
-        if ch[0] == "\\":
+        if ch[0] == b"\\"[0]:
             try:
                 c = self.string[self.index + 1]
             except IndexError:
-                raise RegexError, "bogus escape (end of line)"
+                raise RegexError("bogus escape (end of line)")
             ch = ch + c
         self.index = self.index + len(ch)
         self.next = ch
@@ -824,14 +692,14 @@ def prepare_pattern(pattern, int flags):
     source = Tokenizer(pattern)
     new_pattern = []
 
-    cdef str strflags = ''
+    cdef bytes strflags = b''
     if flags & _S:
-        strflags += 's'
+        strflags += b's'
     if flags & _M:
-        strflags += 'm'
+        strflags += b'm'
 
     if strflags:
-        new_pattern.append('(?' + strflags + ')')
+        new_pattern.append(b'(?' + strflags + b')')
 
     while 1:
         this = source.get()
@@ -840,43 +708,43 @@ def prepare_pattern(pattern, int flags):
         if flags & _X:
             if this in WHITESPACE:
                 continue
-            if this == "#":
+            if this == b"#":
                 while 1:
                     this = source.get()
-                    if this in (None, "\n"):
+                    if this in (None, b"\n"):
                         break
                 continue
 
-        if this[0] not in '[\\':
+        if this[0] not in b'[\\':
             new_pattern.append(this)
             continue
 
-        elif this == '[':
+        elif this == b'[':
             new_pattern.append(this)
             while 1:
                 this = source.get()
                 if this is None:
                     raise RegexError("unexpected end of regular expression")
-                elif this == ']':
+                elif this == b']':
                     new_pattern.append(this)
                     break
-                elif this[0] == '\\':
+                elif this[0] == b'\\'[0]:
                     if flags & _U:
-                        if this[1] == 'd':
-                            new_pattern.append(r'\p{Nd}')
-                        elif this[1] == 'w':
-                            new_pattern.append(r'_\p{L}\p{Nd}')
-                        elif this[1] == 's':
-                            new_pattern.append(r'\s\p{Z}')
-                        elif this[1] == 'D':
-                            new_pattern.append(r'\P{Nd}')
-                        elif this[1] == 'W':
+                        if this[1] == b'd'[0]:
+                            new_pattern.append(b'\\p{Nd}')
+                        elif this[1] == b'w'[0]:
+                            new_pattern.append(b'_\\p{L}\\p{Nd}')
+                        elif this[1] == b's'[0]:
+                            new_pattern.append(b'\\s\\p{Z}')
+                        elif this[1] == b'D'[0]:
+                            new_pattern.append(b'\\P{Nd}')
+                        elif this[1] == b'W'[0]:
                             # Since \w and \s are made out of several character groups,
                             # I don't see a way to convert their complements into a group
                             # without rewriting the whole expression, which seems too complicated.
 
                             raise CharClassProblemException()
-                        elif this[1] == 'S':
+                        elif this[1] == b'S'[0]:
                             raise CharClassProblemException()
                         else:
                             new_pattern.append(this)
@@ -884,13 +752,13 @@ def prepare_pattern(pattern, int flags):
                         new_pattern.append(this)
                 else:
                     new_pattern.append(this)
-        elif this[0] == '\\':
-            if this[1] in '89':
+        elif this[0] == b'\\':
+            if this[1] in b'89':
                 raise BackreferencesException()
-            elif this[1] in '1234567':
-                if source.next and source.next in '1234567':
+            elif this[1] in b'1234567':
+                if source.next and source.next in b'1234567':
                     this += source.get()
-                    if source.next and source.next in '1234567':
+                    if source.next and source.next in b'1234567':
                         # all clear, this is an octal escape
                         new_pattern.append(this)
                     else:
@@ -898,28 +766,28 @@ def prepare_pattern(pattern, int flags):
                 else:
                     raise BackreferencesException()
             elif flags & _U:
-                if this[1] == 'd':
-                    new_pattern.append(r'\p{Nd}')
-                elif this[1] == 'w':
-                    new_pattern.append(r'[_\p{L}\p{Nd}]')
-                elif this[1] == 's':
-                    new_pattern.append(r'[\s\p{Z}]')
-                elif this[1] == 'D':
-                    new_pattern.append(r'[^\p{Nd}]')
-                elif this[1] == 'W':
-                    new_pattern.append(r'[^_\p{L}\p{Nd}]')
-                elif this[1] == 'S':
-                    new_pattern.append(r'[^\s\p{Z}]')
+                if this[1] == b'd'[0]:
+                    new_pattern.append(b'\\p{Nd}')
+                elif this[1] == b'w'[0]:
+                    new_pattern.append(b'[_\\p{L}\\p{Nd}]')
+                elif this[1] == b's'[0]:
+                    new_pattern.append(b'[\\s\\p{Z}]')
+                elif this[1] == b'D'[0]:
+                    new_pattern.append(b'[^\\p{Nd}]')
+                elif this[1] == b'W'[0]:
+                    new_pattern.append(b'[^_\\p{L}\\p{Nd}]')
+                elif this[1] == b'S'[0]:
+                    new_pattern.append(b'[^\\s\\p{Z}]')
                 else:
                     new_pattern.append(this)
             else:
                 new_pattern.append(this)
 
-    return ''.join(new_pattern)
+    return b''.join(new_pattern)
 
 
 
-def _compile(pattern, int flags=0, int max_mem=8388608):
+def _compile(bytes pattern, int flags=0, int max_mem=8388608):
     """
     Compile a regular expression pattern, returning a pattern object.
     """
@@ -964,8 +832,6 @@ def _compile(pattern, int flags=0, int max_mem=8388608):
     opts.set_encoding(EncodingUTF8)
 
     # We use this function to get the proper length of the string.
-
-    #pattern = unicode_to_bytestring(pattern, &encoded)
     encoded = pystring_to_cstr(pattern, &pattern_cstr, &length)
     if encoded == -1:
         raise TypeError("first argument must be a string or compiled pattern")
@@ -996,7 +862,6 @@ def _compile(pattern, int flags=0, int max_mem=8388608):
     pypattern.pattern = original_pattern
     pypattern.re_pattern = re_pattern
     pypattern.ngroups = re_pattern.NumberOfCapturingGroups()
-    pypattern.encoded = <bint>encoded
     pypattern._flags = flags
     del s
     return pypattern
@@ -1065,7 +930,7 @@ def subn(pattern, repl, in_string, int count=0):
     return compile(pattern).subn(repl, in_string, count)
 
 _alphanum = {}
-for c in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890':
+for c in b'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890':
     _alphanum[c] = 1
 del c
 
@@ -1076,9 +941,9 @@ def escape(pattern):
     for i in range(len(pattern)):
         c = pattern[i]
         if ord(c) < 0x80 and c not in alphanum:
-            if c == "\000":
-                s[i] = "\\000"
+            if c == b"\000":
+                s[i] = b"\\000"
             else:
-                s[i] = "\\" + c
+                s[i] = b"\\" + c
     return pattern[:0].join(s)
 

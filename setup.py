@@ -98,6 +98,7 @@ re2_ext = Extension( "re2._re2",
 #         libraries=["re2"],
 #         library_dirs=[pjoin(RE2_SRC_PATH, "lib")],
 #         runtime_library_dirs=[pjoin(RE2_SRC_PATH, "lib")],
+#         extra_compile_args=['-Wno-unused-function']
 #     )
 
 is_py_3 = int(sys.version_info[0] > 2)
