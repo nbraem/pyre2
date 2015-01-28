@@ -1,6 +1,7 @@
 # see https://github.com/cython/cython/wiki/FAQ#id35
 from libcpp.string cimport string as cpp_string
-from libcpp.map cimport map as cpp_map
+#from libcpp.map cimport map as cpp_map
+from libcppmap cimport map as cpp_map    # until my PR is accepted
 
 cdef int MAGIC=7
 
