@@ -35,15 +35,6 @@ from os.path import join as pjoin
 import sys
 import shutil
 
-class CustomInstallLib(install_lib.install_lib):
-    def run(self):
-        install_lib.install_lib.run.run(self)
-        postinstall()
-
-class CustomBuildExt(build_ext.build_ext):
-    def run(self):
-        build_ext.build_ext.run(self)
-        postinstall()
 
 PACKAGE_PATH =          os.path.abspath(os.path.dirname(__file__))
 MODULE_PATH =           pjoin(PACKAGE_PATH, 're2')
@@ -63,23 +54,13 @@ def get_authors():
 # see:
 # http://stackoverflow.com/questions/19123623/python-runtime-library-dirs-doesnt-work-on-mac
 RE2_LIB_PATH = pjoin(RE2_SRC_PATH, "lib")
-def postinstall():
-    print("checking linking")
-    import platform
-    import subprocess
-    if platform.system() == 'Darwin':
-        wrong_lib = 'obj/so/libre2.so.0'
-        right_lib = pjoin(RE2_LIB_PATH, 'libre2.so.0')
-        target_so = pjoin(MODULE_PATH, "_re2.so")
-        rename = "install_name_tool -change %s %s %s" % (wrong_lib, right_lib, target_so)
-        p_rename = subprocess.Popen([rename], shell=True)
-        p_rename.wait()
 
+re2_static_lib = pjoin(RE2_LIB_PATH, 'libre2.a')
 re2_ext = Extension( "re2._re2",
         sources=['re2/_re2.pyx'],
         language="c++",
         include_dirs=[pjoin(RE2_SRC_PATH, "include"), pjoin('re2', 'src')],
-        libraries=["re2"],
+        libraries=["re2_static"],
         library_dirs=[RE2_LIB_PATH],
         runtime_library_dirs=[RE2_LIB_PATH],
         extra_compile_args=['-Wno-unused-function'],
@@ -110,7 +91,5 @@ setup(
     maintainer_email = EMAIL,
     url = "http://github.com/Wyss/pyre2/",
     classifiers = CLASSIFIERS,
-    cmdclass={'install_lib': CustomInstallLib, 
-    'build_ext': CustomBuildExt}
 )
 
