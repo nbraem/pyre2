@@ -2,7 +2,7 @@
 import sys
 import os
 import re
-from distutils.core import setup, Extension, Command
+from distutils.core import setup, Extension
 
 DESCRIPTION = "Python wrapper for Google's RE2 using Cython"
 
@@ -27,12 +27,23 @@ CLASSIFIERS = [
 ]
 
 from distutils.core import setup, Extension
+from distutils.command import install_lib, sdist, build_ext
 # from Cython.Distutils import Extension
 from Cython.Build import cythonize
 import os
 from os.path import join as pjoin
 import sys
 import shutil
+
+class CustomInstallLib(install_lib.install_lib):
+    def run(self):
+        install_lib.install_lib.run.run(self)
+        postinstall()
+
+class CustomBuildExt(build_ext.build_ext):
+    def run(self):
+        build_ext.build_ext.run(self)
+        postinstall()
 
 PACKAGE_PATH =          os.path.abspath(os.path.dirname(__file__))
 MODULE_PATH =           pjoin(PACKAGE_PATH, 're2')
@@ -49,46 +60,29 @@ def get_authors():
         authors = [match.group(1) for match in author_re.finditer(authors_f.read())]
     return ', '.join(authors)
 
-
-class TestCommand(Command):
-    description = 'Run packaged tests'
-    user_options = []
-    def initialize_options(self):
-        pass
-
-    def finalize_options(self):
-        pass
-
-    def run(self):
-        from tests import re2_test
-        re2_test.testall()
-
-
-cmdclass = {'test': TestCommand}
-
-# # Locate the re2 module
-# _re2_prefixes = [
-#     ''
-#     '/usr',
-#     '/usr/local',
-#     '/opt/',
-# ]
-
-# for re2_prefix in _re2_prefixes:
-#     if os.path.exists(os.path.join(re2_prefix, "include", "re2")):
-#         break
-# else:
-#     re2_prefix = ""
-
+# see:
+# http://stackoverflow.com/questions/19123623/python-runtime-library-dirs-doesnt-work-on-mac
+RE2_LIB_PATH = pjoin(RE2_SRC_PATH, "lib")
+def postinstall():
+    print("checking linking")
+    import platform
+    import subprocess
+    if platform.system() == 'Darwin':
+        wrong_lib = 'obj/so/libre2.so.0'
+        right_lib = pjoin(RE2_LIB_PATH, 'libre2.so.0')
+        target_so = pjoin(MODULE_PATH, "_re2.so")
+        rename = "install_name_tool -change %s %s %s" % (wrong_lib, right_lib, target_so)
+        p_rename = subprocess.Popen([rename], shell=True)
+        p_rename.wait()
 
 re2_ext = Extension( "re2._re2",
         sources=['re2/_re2.pyx'],
         language="c++",
         include_dirs=[pjoin(RE2_SRC_PATH, "include"), pjoin('re2', 'src')],
         libraries=["re2"],
-        library_dirs=[pjoin(RE2_SRC_PATH, "lib")],
-        runtime_library_dirs=[pjoin(RE2_SRC_PATH, "lib")],
-        extra_compile_args=['-Wno-unused-function']
+        library_dirs=[RE2_LIB_PATH],
+        runtime_library_dirs=[RE2_LIB_PATH],
+        extra_compile_args=['-Wno-unused-function'],
     )
 
 # re2_ext = Extension( "re2.tester",
@@ -115,6 +109,8 @@ setup(
     license=LICENSE,
     maintainer_email = EMAIL,
     url = "http://github.com/Wyss/pyre2/",
-    classifiers = CLASSIFIERS
+    classifiers = CLASSIFIERS,
+    cmdclass={'install_lib': CustomInstallLib, 
+    'build_ext': CustomBuildExt}
 )
 
