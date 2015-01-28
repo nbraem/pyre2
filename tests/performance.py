@@ -121,7 +121,7 @@ def benchmarks_to_ReST(benchmarks):
 
 
 # # Convenient decorator for registering a new test.
-def register_test(name, pattern, num_runs = 1, **data):
+def register_test(name, pattern, num_runs = 100, **data):
     def decorator(method):
         global tests
         tests[name] = method
@@ -171,7 +171,7 @@ def getwikidata():
 
 @register_test("Findall URI|Email",
              r'([a-zA-Z][a-zA-Z0-9]*)://([^ /]+)(/[^ ]*)?|([^ @]+)@([^ @]+)'.encode('utf-8'),
-             2,
+             10,
              data=getwikidata())
 def findall_uriemail(pattern, data):
     """
@@ -182,38 +182,38 @@ def findall_uriemail(pattern, data):
 
 
 
-@register_test("Replace WikiLinks",
-             r'(\[\[(^\|)+.*?\]\])'.encode('utf-8'),
-             data=getwikidata())
-def replace_wikilinks(pattern, data):
-    """
-    This test replaces links of the form [[Obama|Barack_Obama]] to Obama.
-    """
-    return len(pattern.sub(b'\\1', data))
+# @register_test("Replace WikiLinks",
+#              r'(\[\[(^\|)+.*?\]\])'.encode('utf-8'),
+#              data=getwikidata())
+# def replace_wikilinks(pattern, data):
+#     """
+#     This test replaces links of the form [[Obama|Barack_Obama]] to Obama.
+#     """
+#     return len(pattern.sub(b'\\1', data))
 
 
 
-register_test("Remove WikiLinks",
-             r'(\[\[(^\|)+.*?\]\])'.encode('utf-8'),
-             data=getwikidata())
-def remove_wikilinks(pattern, data):
-    """
-    This test replaces links of the form [[Obama|Barack_Obama]] to the empty string
-    """
-    return len(pattern.sub(b'', data))
+# register_test("Remove WikiLinks",
+#              r'(\[\[(^\|)+.*?\]\])'.encode('utf-8'),
+#              data=getwikidata())
+# def remove_wikilinks(pattern, data):
+#     """
+#     This test replaces links of the form [[Obama|Barack_Obama]] to the empty string
+#     """
+#     return len(pattern.sub(b'', data))
 
 
 
 
 
-@register_test("Remove WikiLinks",
-             r'(<page[^>]*>)'.encode('utf-8'),
-             data=getwikidata())
-def split_pages(pattern, data):
-    """
-    This test splits the data by the <page> tag.
-    """
-    return len(pattern.split(data))
+# @register_test("Remove WikiLinks",
+#              r'(<page[^>]*>)'.encode('utf-8'),
+#              data=getwikidata())
+# def split_pages(pattern, data):
+#     """
+#     This test splits the data by the <page> tag.
+#     """
+#     return len(pattern.split(data))
 
 
 # def getweblogdata():

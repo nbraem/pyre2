@@ -301,9 +301,10 @@ cdef class Pattern:
         """
         cdef Py_ssize_t size
         cdef int result
-        cdef char * cstring
+        cdef char* cstring
         cdef int encoded = 0
-        cdef StringPiece * sp
+        #cdef StringPiece* sp
+        cdef StringPiece sp
         cdef Match m = Match(self, self.ngroups + 1)
 
         encoded = pystring_to_cstr(in_string, &cstring, &size)
@@ -319,11 +320,18 @@ cdef class Pattern:
         if pos > size:
             return None
 
-        sp = new StringPiece(cstring, size)
-        with nogil:
-            result = self.re_pattern.Match(sp[0], <int>pos, <int>size, anchoring, m.matches, self.ngroups + 1)
+        #sp = new StringPiece(cstring, size)
+        #try:
+        #    with nogil:
+        #        result = self.re_pattern.Match(sp[0], <int>pos, <int>size, 
+        #                                anchoring, m.matches, self.ngroups + 1)
+        #finally:
+        #    del sp
 
-        del sp
+        sp = StringPiece(cstring, size)
+        with nogil:
+            result = self.re_pattern.Match(sp, <int>pos, <int>size, 
+                                    anchoring, m.matches, self.ngroups + 1)
         if result == 0:
             return None
 
@@ -336,7 +344,7 @@ cdef class Pattern:
         else:
             m._endpos = endpos
         return m
-
+    # end cdef
 
     def search(self, in_string, int pos=0, int endpos=-1):
         """
@@ -363,7 +371,8 @@ cdef class Pattern:
         cdef Py_ssize_t size
         cdef int result
         cdef char* in_c_str
-        cdef StringPiece* sp
+        #cdef StringPiece* sp
+        cdef StringPiece sp
         cdef Match m
         cdef list resultlist = []
         cdef int encoded = 0
@@ -375,12 +384,45 @@ cdef class Pattern:
         if endpos != -1 and endpos < size:
             size = endpos
 
-        sp = new StringPiece(in_c_str, size)
-
+        #sp = new StringPiece(in_c_str, size)
+        #try:
+        #    while True:
+        #        m = Match(self, self.ngroups + 1)
+        #        with nogil:
+        #            result = self.re_pattern.Match(sp[0], <int>pos, <int>size, 
+        #                            UNANCHORED, m.matches, self.ngroups + 1)
+        #        if result == 0:
+        #            break
+        #        m.named_groups = addressof(self.re_pattern.NamedCapturingGroups())
+        #        m.nmatches = self.ngroups + 1
+        #        m.match_string = in_string
+        #        m._pos = pos
+        #        if endpos == -1:
+        #            m._endpos = len(in_string)
+        #        else:
+        #            m._endpos = endpos
+        #        if as_match:
+        #            if self.ngroups > 1:
+        #                resultlist.append(m.groups(b""))
+        #            else:
+        #                resultlist.append(m.group(self.ngroups))
+        #        else:
+        #            resultlist.append(m)
+        #        if pos == size:
+        #            break
+        #        # offset the pos to move to the next point
+        #        if m.matches[0].length() == 0:
+        #            pos += 1
+        #        else:
+        #            pos = m.matches[0].data() - in_c_str + m.matches[0].length()
+        #finally:
+        #    del sp
+        sp = StringPiece(in_c_str, size)
         while True:
             m = Match(self, self.ngroups + 1)
             with nogil:
-                result = self.re_pattern.Match(sp[0], <int>pos, <int>size, UNANCHORED, m.matches, self.ngroups + 1)
+                result = self.re_pattern.Match(sp, <int>pos, <int>size, 
+                                UNANCHORED, m.matches, self.ngroups + 1)
             if result == 0:
                 break
             m.named_groups = addressof(self.re_pattern.NamedCapturingGroups())
@@ -405,7 +447,7 @@ cdef class Pattern:
                 pos += 1
             else:
                 pos = m.matches[0].data() - in_c_str + m.matches[0].length()
-        del sp
+        # end while
         return resultlist
 
     def finditer(self, string, int pos=0, int endpos=-1):
@@ -436,8 +478,8 @@ cdef class Pattern:
         cdef int lookahead = 0
         cdef int num_split = 0
         cdef char* in_c_str
-        cdef StringPiece * sp
-        cdef StringPiece * matches
+        cdef StringPiece* sp
+        cdef StringPiece* matches
         cdef Match m
         cdef list resultlist = []
         cdef int encoded = 0
@@ -451,43 +493,44 @@ cdef class Pattern:
 
         matches = new_StringPiece_array(self.ngroups + 1)
         sp = new StringPiece(in_c_str, size)
-
-        while True:
-            with nogil:
-                result = self.re_pattern.Match(sp[0], <int>(pos + lookahead), 
-                    <int>size, UNANCHORED, matches, self.ngroups + 1)
-            if result == 0:
-                break
-
-            match_start = matches[0].data() - in_c_str
-            match_end = match_start + matches[0].length()
-
-            # If an empty match, just look ahead until you find something
-            if match_start == match_end:
-                if pos + lookahead == size:
+        try:
+            while True:
+                with nogil:
+                    result = self.re_pattern.Match(sp[0], <int>(pos + lookahead), 
+                        <int>size, UNANCHORED, matches, self.ngroups + 1)
+                if result == 0:
                     break
-                lookahead += 1
-                continue
 
-            resultlist.append(sp.data()[pos:match_start])
-            if self.ngroups > 0:
-                for group in range(self.ngroups):
-                    if matches[group + 1].data() == NULL:
-                        resultlist.append(None)
-                    else:
-                        resultlist.append(matches[group + 1].data()[:matches[group + 1].length()])
+                match_start = matches[0].data() - in_c_str
+                match_end = match_start + matches[0].length()
 
-            # offset the pos to move to the next point
-            pos = match_end
-            lookahead = 0
+                # If an empty match, just look ahead until you find something
+                if match_start == match_end:
+                    if pos + lookahead == size:
+                        break
+                    lookahead += 1
+                    continue
 
-            num_split += 1
-            if maxsplit and num_split >= maxsplit:
-                break
+                resultlist.append(sp.data()[pos:match_start])
+                if self.ngroups > 0:
+                    for group in range(self.ngroups):
+                        if matches[group + 1].data() == NULL:
+                            resultlist.append(None)
+                        else:
+                            resultlist.append(matches[group + 1].data()[:matches[group + 1].length()])
 
-        resultlist.append(sp.data()[pos:])
-        delete_StringPiece_array(matches)
-        del sp
+                # offset the pos to move to the next point
+                pos = match_end
+                lookahead = 0
+
+                num_split += 1
+                if maxsplit and num_split >= maxsplit:
+                    break
+
+            resultlist.append(sp.data()[pos:])
+        finally:
+            delete_StringPiece_array(matches)
+            del sp
         return resultlist
 
     def sub(self, repl, bytes in_string, int count=0):
@@ -560,30 +603,29 @@ cdef class Pattern:
             sp = new StringPiece(fixed_repl.c_str())
         else:
             sp = new StringPiece(repl_c_str, repl_size)
+        try:
+            in_encoded = pystring_to_cstr(in_string, &input_c_str, &input_size)
+            if in_encoded == -1:
+                raise TypeError("expected string or buffer")
 
-        in_encoded = pystring_to_cstr(in_string, &input_c_str, &input_size)
-        if in_encoded == -1:
-            raise TypeError("expected string or buffer")
-
-        input_cpp_str = new cpp_string(input_c_str)
-        if not count:
-            total_replacements = pattern_GlobalReplace(input_cpp_str,
+            input_cpp_str = new cpp_string(input_c_str)
+            try:
+                if not count:
+                    total_replacements = pattern_GlobalReplace(input_cpp_str,
+                                                                self.re_pattern[0],
+                                                                sp[0])
+                elif count == 1:
+                    total_replacements = pattern_Replace(input_cpp_str,
                                                             self.re_pattern[0],
                                                             sp[0])
-        elif count == 1:
-            total_replacements = pattern_Replace(input_cpp_str,
-                                                      self.re_pattern[0],
-                                                      sp[0])
-        else:
+                else:
+                    raise NotImplementedError("So far pyre2 does not support custom replacement counts")
+                result = cpp_to_pystring(input_cpp_str[0])
+            finally:
+                del input_cpp_str
+        finally:
             del fixed_repl
-            del input_cpp_str
             del sp
-            raise NotImplementedError("So far pyre2 does not support custom replacement counts")
-
-        result = cpp_to_pystring(input_cpp_str[0])
-        del fixed_repl
-        del input_cpp_str
-        del sp
         return (result, total_replacements)
     # end def
 
