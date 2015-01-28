@@ -9,7 +9,11 @@ To add a test, you can add a function to the bottom of this page that uses the
 import it.
 """
 from timeit import Timer
-import simplejson
+# import simplejson
+import json
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import re2
 import re
@@ -18,13 +22,13 @@ try:
 except ImportError:
     regex = None
 
-import os
 import gzip
 
 re2.set_fallback_notification(re2.FALLBACK_EXCEPTION)
 
 os.chdir(os.path.dirname(__file__) or '.')
 
+global tests
 tests = {}
 
 setup_code = """\
@@ -39,10 +43,12 @@ current_re = [None]
 
 
 
-def main():
+def main(tests):
     benchmarks = {}
     # Run all of the performance comparisons.
+    print(tests)
     for testname, method in tests.items():
+        print(testname)
         benchmarks[testname] = {}
         if regex is not None:
             modules = (re, re2, regex)
@@ -114,17 +120,42 @@ def benchmarks_to_ReST(benchmarks):
 ###############################################
 
 
-# Convenient decorator for registering a new test.
-def register_test(name, pattern, num_runs = 100, **data):
+# # Convenient decorator for registering a new test.
+def register_test(name, pattern, num_runs = 1, **data):
     def decorator(method):
+        global tests
         tests[name] = method
         method.pattern = pattern
         method.num_runs = num_runs
         method.data = data
-
-        return method
+        def wrapped_f(*args):
+            method(*args)
+        return wrapped_f
     return decorator
 
+# class register_test(object):
+
+#     def __init__(self, name, pattern, num_runs = 100, **data):
+#         self.name = name
+#         self.pattern = pattern
+#         self.num_runs = num_runs
+#         self.data = data
+
+#     def __call__(self, method):
+#         """
+#         If there are decorator arguments, __call__() is only called
+#         once, as part of the decoration process! You can only give
+#         it a single argument, which is the function object.
+#         """
+#         global tests
+#         print("decing", self.name)
+#         tests[self.name] = method
+#         method.pattern = self.pattern
+#         method.num_runs = self.num_runs
+#         method.data = self.data
+#         def wrapped_f(*args):
+#             method(*args)
+#         return wrapped_f
 
 # This is the only function to get data right now,
 # but I could imagine other functions as well.
@@ -132,50 +163,52 @@ _wikidata = None
 def getwikidata():
     global _wikidata
     if _wikidata is None:
-        _wikidata = gzip.open('wikipages.xml.gz').read()
+        _wikidata = gzip.open('wikipages.xml.gz', 'r').read()
+    # print("wikipages", type(_wikidata))
     return _wikidata
 
 
 
-#register_test("Findall URI|Email",
-#              r'([a-zA-Z][a-zA-Z0-9]*)://([^ /]+)(/[^ ]*)?|([^ @]+)@([^ @]+)',
-#              2,
-#              data=getwikidata())
+@register_test("Findall URI|Email",
+             r'([a-zA-Z][a-zA-Z0-9]*)://([^ /]+)(/[^ ]*)?|([^ @]+)@([^ @]+)'.encode('utf-8'),
+             2,
+             data=getwikidata())
 def findall_uriemail(pattern, data):
     """
     Find list of '([a-zA-Z][a-zA-Z0-9]*)://([^ /]+)(/[^ ]*)?|([^ @]+)@([^ @]+)'
     """
-    return len(pattern.findall(data))
+    a = pattern.findall(data)
+    return len(a)
 
 
 
-#register_test("Replace WikiLinks",
-#              r'(\[\[(^\|)+.*?\]\])',
-#              data=getwikidata())
+@register_test("Replace WikiLinks",
+             r'(\[\[(^\|)+.*?\]\])'.encode('utf-8'),
+             data=getwikidata())
 def replace_wikilinks(pattern, data):
     """
     This test replaces links of the form [[Obama|Barack_Obama]] to Obama.
     """
-    return len(pattern.sub(r'\1', data))
+    return len(pattern.sub(b'\\1', data))
 
 
 
-#register_test("Remove WikiLinks",
-#              r'(\[\[(^\|)+.*?\]\])',
-#              data=getwikidata())
+register_test("Remove WikiLinks",
+             r'(\[\[(^\|)+.*?\]\])'.encode('utf-8'),
+             data=getwikidata())
 def remove_wikilinks(pattern, data):
     """
     This test replaces links of the form [[Obama|Barack_Obama]] to the empty string
     """
-    return len(pattern.sub(r'', data))
+    return len(pattern.sub(b'', data))
 
 
 
 
 
-#register_test("Remove WikiLinks",
-#              r'(<page[^>]*>)',
-#              data=getwikidata())
+@register_test("Remove WikiLinks",
+             r'(<page[^>]*>)'.encode('utf-8'),
+             data=getwikidata())
 def split_pages(pattern, data):
     """
     This test splits the data by the <page> tag.
@@ -183,27 +216,28 @@ def split_pages(pattern, data):
     return len(pattern.split(data))
 
 
-def getweblogdata():
-    return open(os.path.join(os.path.dirname(__file__), 'access.log'))
+# def getweblogdata():
+#     # return open(os.path.join(os.path.dirname(__file__), 'access.log'))
+#     return open('access.log', 'rb')
 
-@register_test("weblog scan",
-               #r'^(\S+) (\S+) (\S+) \[(\d{1,2})/(\w{3})/(\d{4}):(\d{2}):(\d{2}):(\d{2}) -(\d{4})\] "(\S+) (\S+) (\S+)" (\d+) (\d+|-) "([^"]+)" "([^"]+)"\n',
-#               '(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) ? (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (".*?"|-) (\S+) (\S+) (\S+) (\S+)',
-               '(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) ? (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+)',
-               data=getweblogdata())
-def weblog_matches(pattern, data):
-    """
-    Match weblog data line by line.
-    """
-    total=0
-    for line in data.read()[:20000].splitlines():
-        p = pattern.search(line)
-        #for p in pattern.finditer(data.read()[:20000]):
-        if p:
-            total += len(p.groups())
-    data.seek(0)
+# @register_test("weblog scan",
+#                #r'^(\S+) (\S+) (\S+) \[(\d{1,2})/(\w{3})/(\d{4}):(\d{2}):(\d{2}):(\d{2}) -(\d{4})\] "(\S+) (\S+) (\S+)" (\d+) (\d+|-) "([^"]+)" "([^"]+)"\n',
+# #               '(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) ? (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (".*?"|-) (\S+) (\S+) (\S+) (\S+)',
+#                '(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) ? (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+)'.encode('utf-8'),
+#                data=getweblogdata())
+# def weblog_matches(pattern, data):
+#     """
+#     Match weblog data line by line.
+#     """
+#     total=0
+#     for line in data.read()[:20000].splitlines():
+#         p = pattern.search(line)
+#         #for p in pattern.finditer(data.read()[:20000]):
+#         if p:
+#             total += len(p.groups())
+#     data.seek(0)
 
-    return 0
+#     return 0
 
 if __name__ == '__main__':
-    main()
+    main(tests)
