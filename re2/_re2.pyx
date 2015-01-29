@@ -653,7 +653,6 @@ cdef class Pattern:
             raise TypeError("expected string or buffer")
 
         sp = new StringPiece(input_c_str, size)
-
         try:
             while True:
                 m = Match(self, self.ngroups + 1)

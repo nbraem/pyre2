@@ -38,7 +38,7 @@ import shutil
 
 PACKAGE_PATH =          os.path.abspath(os.path.dirname(__file__))
 MODULE_PATH =           pjoin(PACKAGE_PATH, 're2')
-RE2_SRC_PATH =          pjoin(MODULE_PATH, 'src', 're2_cpp', 'usr', 'local')
+RE2_SRC_PATH =          pjoin(MODULE_PATH, 'src', 're2_cpp')
 
 def get_long_description():
     with open(pjoin(PACKAGE_PATH, "README.rst")) as readme_f:
@@ -55,7 +55,6 @@ def get_authors():
 # http://stackoverflow.com/questions/19123623/python-runtime-library-dirs-doesnt-work-on-mac
 RE2_LIB_PATH = pjoin(RE2_SRC_PATH, "lib")
 
-re2_static_lib = pjoin(RE2_LIB_PATH, 'libre2.a')
 re2_ext = Extension( "re2._re2",
         sources=['re2/_re2.pyx'],
         language="c++",
