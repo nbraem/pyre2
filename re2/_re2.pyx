@@ -277,7 +277,7 @@ cdef class Match:
 
 
 cdef class Pattern:
-    cdef RE2 * re_pattern
+    cdef RE2* re_pattern
     cdef int ngroups
     cdef int _flags
     cdef public object pattern
@@ -979,11 +979,6 @@ def subn(pattern, repl, in_string, int count=0):
 _alphanum = {}
 for c in b'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890':
     _alphanum[c] = 1
-del c
-
-_alphanum2 = {}
-for c in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890':
-    _alphanum2[c] = 1
 del c
 
 def escape(pattern):

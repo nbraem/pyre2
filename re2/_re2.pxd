@@ -46,9 +46,9 @@ cdef inline bint is_bytes(s):
 
 cdef extern from "re2/stringpiece.h" namespace "re2":
     cdef cppclass StringPiece:
-        StringPiece()
-        StringPiece(const char*)
-        StringPiece(const char*, int)
+        StringPiece() except +
+        StringPiece(const char*) except +
+        StringPiece(const char*, int) except +
         const char* data()
         int copy(char * buf, size_t n, size_t pos)
         int length()
@@ -101,8 +101,8 @@ cdef extern from "re2/re2.h" namespace "re2":
         void set_encoding(re2_Encoding encoding)
 
     cdef cppclass RE2:
-        RE2(const StringPiece pattern, Options option)
-        RE2(const StringPiece pattern)
+        RE2(const StringPiece pattern, Options option) except +
+        RE2(const StringPiece pattern) except +
         int Match(const StringPiece text, int startpos, int endpos,
                   Anchor anchor, StringPiece * match, int nmatch) nogil
         int NumberOfCapturingGroups() const
@@ -115,7 +115,7 @@ cdef extern from "re2/re2.h" namespace "re2":
 # This header is used for ways to hack^Wbypass the cython
 # issues.
 cdef extern from "_re2macros.h":
-    StringPiece* new_StringPiece_array(int) nogil
+    StringPiece* new_StringPiece_array(int) nogil except +
     void delete_StringPiece_array(StringPiece* ptr)
 
     # This fixes the bug Cython #548 whereby reference returns
