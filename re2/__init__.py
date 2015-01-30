@@ -22,4 +22,5 @@ class Pattern:
   def search(self, in_string, pos=0, endpos=-1):
     return self._p.search(_to_bytes(in_string), pos, endpos)
 
+def compile(pattern, flags=0, max_mem=8388608):
   return Pattern(re2._re2.compile(_to_bytes(pattern), flags, max_mem))
