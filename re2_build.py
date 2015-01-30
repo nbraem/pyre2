@@ -32,6 +32,7 @@ def re2Build():
                                 shell=True, 
                                 cwd=RE2_SRC_PATH)
     re2build.wait()
+    # copy files to install
     install_include_path = pjoin(RE2_INSTALL_PATH, "include", "re2")
     if not os.path.exists(install_include_path):
         makedirs(install_include_path)
